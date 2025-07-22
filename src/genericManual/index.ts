@@ -53,47 +53,57 @@ async function recursivelyDownloadManual(
 
       try {
         // =================================================================
-        // FINAL CORRECTED LOGIC
+        // FINAL CORRECTED LOGIC: Trust, but Verify
         // =================================================================
-        // Step 1: Start the navigation but don't wait for it to finish.
-        // This lets the script on the page start running.
-        page.goto(htmlUrl, { waitUntil: "load", timeout: 60000 });
-
-        // Step 2: Wait specifically for the URL to change to a PDF URL.
-        // This is the most reliable way to handle a JS redirect.
-        console.log(`   --> Waiting for redirect to PDF...`);
-        await page.waitForURL('**/*.pdf', { timeout: 30000 });
+        console.log(`   --> Navigating to ${htmlUrl}`);
         
-        // Step 3: Once the wait is over, the current URL is the PDF URL.
-        const pdfUrl = page.url();
-        console.log(`   --> Redirected to PDF: ${pdfUrl}`);
+        // Step 1: Navigate to the page. Let Playwright handle the redirect.
+        // The default 'load' should wait for the final destination.
+        await page.goto(htmlUrl, { timeout: 60000 });
+        
+        // Step 2: After navigation, get the final URL.
+        const finalUrl = page.url();
+        console.log(`   --> Navigation complete. Final URL is: ${finalUrl}`);
+
+        // Step 3: Check if the final URL is a PDF.
+        if (!finalUrl.endsWith('.pdf')) {
+          throw new Error(`Page did not redirect to a PDF. Final URL: ${finalUrl}`);
+        }
+        
         console.log(`   --> Downloading and saving to ${filePath}`);
 
-        // Step 4: Use our axios client to download the PDF as a stream.
-        const pdfStreamResponse = await client.get(pdfUrl, {
+        // Step 4: Download the captured URL.
+        const pdfStreamResponse = await client.get(finalUrl, {
             responseType: 'stream',
         });
 
-        // Step 5: Save the stream to a file.
         await saveStream(pdfStreamResponse.data, filePath);
 
-        // Step 6: Get the file stats and log the size.
         const fileStats = await stat(filePath);
         const fileSizeInKB = Math.round(fileStats.size / 1024);
         console.log(`   --> Successfully saved ${sanitizedName}.pdf (${fileSizeInKB} KB)`);
         
-        await page.waitForTimeout(1000); // Polite wait
+        await page.waitForTimeout(1000);
 
       } catch (e) {
         const error = e as Error;
         console.error(`Error processing page ${name}: ${error.message}`);
+        
+        // Add screenshot on failure for better debugging
+        const screenshotPath = `error-${sanitizedName.substring(0, 50)}-${Date.now()}.png`;
+        try {
+            await page.screenshot({ path: screenshotPath, fullPage: true });
+            console.log(`Screenshot saved to ${screenshotPath}. Continuing...`);
+        } catch (screenshotError) {
+            console.error("Failed to take screenshot.", screenshotError);
+        }
+        
         continue;
       }
 
       continue;
     }
 
-    // This part handles nested directories in the table of contents
     const newPath = join(path, name.replace(/\//g, "-"));
     try {
       await mkdir(newPath, { recursive: true });
