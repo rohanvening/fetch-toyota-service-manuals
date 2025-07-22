@@ -55,7 +55,7 @@ export default async function downloadGenericManual(
 }
 
 // =================================================================
-// This is the updated function with more robust download logic
+// This is the updated function with intelligent waiting
 // =================================================================
 async function recursivelyDownloadManual(
   page: Page,
@@ -73,37 +73,53 @@ async function recursivelyDownloadManual(
       console.log(`Downloading page ${sanitizedName}...`);
 
       try {
-        // Navigate with a longer timeout and wait for network to be idle
+        // Navigate with a long timeout
         await page.goto(`https://techinfo.toyota.com${value}`, {
-          timeout: 90000, // 90-second timeout
-          waitUntil: "networkidle", // Wait until network activity has ceased
+          timeout: 90000,
+          waitUntil: "networkidle",
         });
 
-        // Optional: Try to remove any floating footers/headers that might block content
-        await page.evaluate(() => {
-            const footer = document.querySelector(".footer");
-            if (footer) footer.remove();
-        }).catch(() => console.log("Could not remove footer, continuing..."));
+        // =================================================================
+        // NEW: Wait for a specific element that indicates content has loaded.
+        // The content appears to be in a frame named 'main_frame'.
+        // =================================================================
+        console.log("Waiting for the main content frame ('main_frame')...");
+        const contentFrame = page.frame("main_frame");
+        if (!contentFrame) {
+            throw new Error("Could not find the 'main_frame' where content is located.");
+        }
 
-        // Create the PDF
-        await page.pdf({
+        // Now, within that frame, wait for a content element to be visible.
+        // A common element is a div with class 'sect'.
+        console.log("Waiting for content element '.sect' to be visible in frame...");
+        await contentFrame.waitForSelector(".sect", { state: 'visible', timeout: 15000 });
+        console.log("Content element found. Preparing to generate PDF.");
+
+        // Take a debug screenshot to see what the page looks like.
+        const debugScreenshotPath = `debug-${sanitizedName.substring(0, 50)}.png`;
+        await page.screenshot({ path: debugScreenshotPath, fullPage: true });
+        console.log(`Debug screenshot saved to ${debugScreenshotPath}`);
+
+        // Generate the PDF from the content frame only
+        await contentFrame.page().pdf({
           path: sanitizedPath,
           margin: { top: "1cm", right: "1cm", bottom: "1cm", left: "1cm" },
           format: "A4",
+          printBackground: true, // Helps with rendering CSS backgrounds
         });
 
-        // Add a small polite wait to avoid overwhelming their servers
-        await page.waitForTimeout(1500);
+        console.log(`Successfully saved PDF to ${sanitizedPath}`);
+        // Add a small polite wait
+        await page.waitForTimeout(1000);
 
       } catch (e) {
         const error = e as Error;
         console.error(`Error saving page ${name}: ${error.message}`);
         
-        // Take a screenshot so we can see what the page looked like when it failed
-        const screenshotPath = `error-${sanitizedName.substring(0, 50)}-${Date.now()}.png`;
-        await page.screenshot({ path: screenshotPath, fullPage: true });
+        const errorScreenshotPath = `error-${sanitizedName.substring(0, 50)}-${Date.now()}.png`;
+        await page.screenshot({ path: errorScreenshotPath, fullPage: true });
         
-        console.log(`Screenshot saved to ${screenshotPath}. Continuing to next page.`);
+        console.log(`Error screenshot saved to ${errorScreenshotPath}. Continuing...`);
         continue;
       }
 
