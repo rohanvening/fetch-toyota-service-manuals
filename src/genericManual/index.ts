@@ -18,7 +18,6 @@ export default async function downloadGenericManual(
     tocReq = await client({
       method: "GET",
       url: `${manualData.type}/${manualData.id}/toc.xml`,
-      // we don't want axios to parse this
       responseType: "text",
     });
   } catch (e: any) {
@@ -27,7 +26,6 @@ export default async function downloadGenericManual(
         `Manual ${manualData.id} doesn't appear to exist-- are you sure the ID is right?`
       );
     }
-
     throw new Error(
       `Unknown error getting title XML for manual ${manualData.raw}: ${e}`
     );
@@ -56,6 +54,9 @@ export default async function downloadGenericManual(
   await recursivelyDownloadManual(page, path, files);
 }
 
+// =================================================================
+// This is the updated function with more robust download logic
+// =================================================================
 async function recursivelyDownloadManual(
   page: Page,
   path: string,
@@ -71,47 +72,53 @@ async function recursivelyDownloadManual(
       const sanitizedPath = `${join(path, sanitizedName)}.pdf`;
       console.log(`Downloading page ${sanitizedName}...`);
 
-      // download page
       try {
+        // Navigate with a longer timeout and wait for network to be idle
         await page.goto(`https://techinfo.toyota.com${value}`, {
-          waitUntil: "load",
+          timeout: 90000, // 90-second timeout
+          waitUntil: "networkidle", // Wait until network activity has ceased
         });
-        await page.addScriptTag({
-          content: `document.querySelector(".footer").remove()`,
-        });
+
+        // Optional: Try to remove any floating footers/headers that might block content
+        await page.evaluate(() => {
+            const footer = document.querySelector(".footer");
+            if (footer) footer.remove();
+        }).catch(() => console.log("Could not remove footer, continuing..."));
+
+        // Create the PDF
         await page.pdf({
           path: sanitizedPath,
-          margin: {
-            top: 1,
-            right: 1,
-            bottom: 1,
-            left: 1,
-          },
+          margin: { top: "1cm", right: "1cm", bottom: "1cm", left: "1cm" },
+          format: "A4",
         });
+
+        // Add a small polite wait to avoid overwhelming their servers
+        await page.waitForTimeout(1500);
+
       } catch (e) {
-        console.error(`Error saving page ${name}: ${e}`);
+        const error = e as Error;
+        console.error(`Error saving page ${name}: ${error.message}`);
+        
+        // Take a screenshot so we can see what the page looked like when it failed
+        await page.screenshot({ path: `error-${sanitizedName}-${Date.now()}.png`, fullPage: true });
+        
+        console.log(`Screenshot saved for ${name}. Continuing to next page.`);
         continue;
       }
 
-      // downloaded page, move on
       continue;
     }
 
-    // we're not at the bottom of the tree, continue
-
-    // create folder
+    // This part handles nested directories in the table of contents
     const newPath = join(path, name.replace(/\//g, "-"));
-    if (newPath.includes("undefined")) debugger;
     try {
       await mkdir(newPath, { recursive: true });
     } catch (e) {
-      if ((e as any).code === "EEXIST") {
-        console.log(
-          `Not creating folder ${newPath} because it already exists.`
-        );
+      if ((e as any).code !== "EEXIST") {
+        console.log(`Could not create directory ${newPath}. Skipping section.`);
+        continue;
       }
     }
-
     await recursivelyDownloadManual(page, newPath, value);
   }
 }
