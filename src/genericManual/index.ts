@@ -53,39 +53,36 @@ async function recursivelyDownloadManual(
 
       try {
         // =================================================================
-        // CORRECTED: Set waitUntil to 'commit' to handle the redirect page.
+        // FINAL CORRECTED LOGIC
         // =================================================================
-        const response = await page.goto(htmlUrl, {
-          timeout: 60000,
-          waitUntil: "commit", // This is the key change!
-        });
+        // Step 1: Start the navigation but don't wait for it to finish.
+        // This lets the script on the page start running.
+        page.goto(htmlUrl, { waitUntil: "load", timeout: 60000 });
 
-        if (!response) {
-            console.log(`Could not get a response for ${name}. Skipping.`);
-            continue;
-        }
-
-        const pdfUrl = response.url();
-
-        if (!pdfUrl.endsWith('.pdf')) {
-            console.log(`Page ${name} did not redirect to a PDF. Final URL: ${pdfUrl}. Skipping.`);
-            continue;
-        }
+        // Step 2: Wait specifically for the URL to change to a PDF URL.
+        // This is the most reliable way to handle a JS redirect.
+        console.log(`   --> Waiting for redirect to PDF...`);
+        await page.waitForURL('**/*.pdf', { timeout: 30000 });
         
+        // Step 3: Once the wait is over, the current URL is the PDF URL.
+        const pdfUrl = page.url();
         console.log(`   --> Redirected to PDF: ${pdfUrl}`);
         console.log(`   --> Downloading and saving to ${filePath}`);
 
+        // Step 4: Use our axios client to download the PDF as a stream.
         const pdfStreamResponse = await client.get(pdfUrl, {
             responseType: 'stream',
         });
 
+        // Step 5: Save the stream to a file.
         await saveStream(pdfStreamResponse.data, filePath);
 
+        // Step 6: Get the file stats and log the size.
         const fileStats = await stat(filePath);
         const fileSizeInKB = Math.round(fileStats.size / 1024);
         console.log(`   --> Successfully saved ${sanitizedName}.pdf (${fileSizeInKB} KB)`);
         
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(1000); // Polite wait
 
       } catch (e) {
         const error = e as Error;
@@ -96,6 +93,7 @@ async function recursivelyDownloadManual(
       continue;
     }
 
+    // This part handles nested directories in the table of contents
     const newPath = join(path, name.replace(/\//g, "-"));
     try {
       await mkdir(newPath, { recursive: true });
