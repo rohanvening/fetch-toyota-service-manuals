@@ -11,131 +11,64 @@ export default async function downloadGenericManual(
   manualData: Manual,
   path: string
 ) {
-  // download ToC
-  let tocReq: AxiosResponse;
+  // We only need to inspect the first page for this diagnostic.
+  const firstPageUrl = `https://techinfo.toyota.com/t3Portal/document/rm/${manualData.id}/xhtml/${manualData.id}_0001.html`;
+
+  console.log("================================================================");
+  console.log("            RUNNING FRAME INSPECTOR DIAGNOSTIC");
+  console.log("================================================================");
+  console.log(`Navigating to the first page: ${firstPageUrl}`);
+
   try {
-    console.log("Downloading table of contents...");
-    tocReq = await client({
-      method: "GET",
-      url: `${manualData.type}/${manualData.id}/toc.xml`,
-      responseType: "text",
+    await page.goto(firstPageUrl, {
+      timeout: 90000,
+      waitUntil: "networkidle",
     });
-  } catch (e: any) {
-    if (e.response && e.response.status === 404) {
-      throw new Error(
-        `Manual ${manualData.id} doesn't appear to exist-- are you sure the ID is right?`
-      );
+
+    console.log("\nPage navigation complete. Inspecting frames...");
+
+    const allFrames = page.frames();
+
+    if (allFrames.length <= 1) {
+      console.log("DIAGNOSTIC RESULT: No frames found on the page.");
+      console.log("This means the content is likely on the main page itself.");
+    } else {
+      console.log(`DIAGNOSTIC RESULT: Found ${allFrames.length} total frames.`);
+      for (const frame of allFrames) {
+        // The main page is a frame with no parent.
+        if (frame.parentFrame() === null) {
+          console.log(`  - Main Page (URL: ${frame.url()})`);
+        } else {
+          // This is a child frame.
+          console.log(`  - Child Frame (Name: '${frame.name()}', URL: ${frame.url()})`);
+        }
+      }
     }
-    throw new Error(
-      `Unknown error getting title XML for manual ${manualData.raw}: ${e}`
-    );
+
+    console.log("\nDumping page's outer HTML to see the <frame> or <iframe> tags:");
+    console.log("----------------------------------------------------------------");
+    // Get the HTML content of the page that defines the frameset
+    const pageHtml = await page.content();
+    console.log(pageHtml);
+    console.log("----------------------------------------------------------------");
+
+
+  } catch (e) {
+    const error = e as Error;
+    console.error(`An error occurred during the diagnostic run: ${error.message}`);
+    await page.screenshot({ path: "diagnostic-error.png", fullPage: true });
+    console.log("Saved screenshot to diagnostic-error.png");
   }
-
-  const files = parseToC(tocReq.data, manualData.year);
-
-  // write to disk
-  console.log("Saving table of contents...");
-  await Promise.all([
-    writeFile(join(path, "toc-full.xml"), tocReq.data),
-    writeFile(
-      join(path, "toc-downloaded.json"),
-      JSON.stringify(files, null, 2)
-    ),
-    writeFile(
-      join(path, "toc.js"),
-      `document.toc = JSON.parse(\`${JSON.stringify(files).replaceAll(
-        '\\"',
-        ""
-      )}\`);`
-    ),
-  ]);
-
-  console.log("Downloading full manual...");
-  await recursivelyDownloadManual(page, path, files);
+  
+  console.log("\nDiagnostic run complete. Please copy the output above.");
+  // We will exit gracefully after the diagnostic.
 }
 
-// =================================================================
-// This is the updated function with intelligent waiting
-// =================================================================
+// This function is not used in the diagnostic script, but needs to exist.
 async function recursivelyDownloadManual(
   page: Page,
   path: string,
   toc: ParsedToC
 ) {
-  const exploded = Object.entries(toc);
-
-  for (const explIdx in exploded) {
-    const [name, value] = exploded[explIdx];
-
-    if (typeof value === "string") {
-      const sanitizedName = name.replace(/\//g, "-");
-      const sanitizedPath = `${join(path, sanitizedName)}.pdf`;
-      console.log(`Downloading page ${sanitizedName}...`);
-
-      try {
-        // Navigate with a long timeout
-        await page.goto(`https://techinfo.toyota.com${value}`, {
-          timeout: 90000,
-          waitUntil: "networkidle",
-        });
-
-        // =================================================================
-        // NEW: Wait for a specific element that indicates content has loaded.
-        // The content appears to be in a frame named 'main_frame'.
-        // =================================================================
-        console.log("Waiting for the main content frame ('main_frame')...");
-        const contentFrame = page.frame("main_frame");
-        if (!contentFrame) {
-            throw new Error("Could not find the 'main_frame' where content is located.");
-        }
-
-        // Now, within that frame, wait for a content element to be visible.
-        // A common element is a div with class 'sect'.
-        console.log("Waiting for content element '.sect' to be visible in frame...");
-        await contentFrame.waitForSelector(".sect", { state: 'visible', timeout: 15000 });
-        console.log("Content element found. Preparing to generate PDF.");
-
-        // Take a debug screenshot to see what the page looks like.
-        const debugScreenshotPath = `debug-${sanitizedName.substring(0, 50)}.png`;
-        await page.screenshot({ path: debugScreenshotPath, fullPage: true });
-        console.log(`Debug screenshot saved to ${debugScreenshotPath}`);
-
-        // Generate the PDF from the content frame only
-        await contentFrame.page().pdf({
-          path: sanitizedPath,
-          margin: { top: "1cm", right: "1cm", bottom: "1cm", left: "1cm" },
-          format: "A4",
-          printBackground: true, // Helps with rendering CSS backgrounds
-        });
-
-        console.log(`Successfully saved PDF to ${sanitizedPath}`);
-        // Add a small polite wait
-        await page.waitForTimeout(1000);
-
-      } catch (e) {
-        const error = e as Error;
-        console.error(`Error saving page ${name}: ${error.message}`);
-        
-        const errorScreenshotPath = `error-${sanitizedName.substring(0, 50)}-${Date.now()}.png`;
-        await page.screenshot({ path: errorScreenshotPath, fullPage: true });
-        
-        console.log(`Error screenshot saved to ${errorScreenshotPath}. Continuing...`);
-        continue;
-      }
-
-      continue;
-    }
-
-    // This part handles nested directories in the table of contents
-    const newPath = join(path, name.replace(/\//g, "-"));
-    try {
-      await mkdir(newPath, { recursive: true });
-    } catch (e) {
-      if ((e as any).code !== "EEXIST") {
-        console.log(`Could not create directory ${newPath}. Skipping section.`);
-        continue;
-      }
-    }
-    await recursivelyDownloadManual(page, newPath, value);
-  }
+  // Intentionally empty for diagnostics
 }
