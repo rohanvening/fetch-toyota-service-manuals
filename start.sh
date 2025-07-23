@@ -83,6 +83,11 @@ while [[ $# -gt 0 ]]; do
       MODE="$2"
       shift 2
       ;;
+    # FIX: Recognize and ignore old, unsupported arguments
+    -e|--email|-p|--password)
+      echo "Warning: The '$1' argument is deprecated and will be ignored. Please use --cookie-string."
+      shift 2
+      ;;
     *)
       # Pass any other arguments directly to the Node.js script
       NODE_ARGS+=("$1")
