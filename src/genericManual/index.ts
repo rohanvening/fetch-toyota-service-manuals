@@ -1,6 +1,5 @@
 import { AxiosResponse } from "axios";
 import { client } from "../api/client";
-// Import 'writeFile' from the 'fs/promises' module
 import { mkdir, writeFile, stat } from "fs/promises";
 import { join } from "path";
 import parseToC, { ParsedToC } from "./parseToC";
@@ -41,7 +40,13 @@ export default async function downloadGenericManual(
   }
 
   const files = parseToC(tocReq.data, manualData.year);
-  await writeFile(join(path, "toc.json"), JSON.stringify(files, null, 2));
+  
+  // =================================================================
+  // FIX: Create toc.js instead of toc.json for local browser compatibility
+  // =================================================================
+  const tocJsContent = `document.toc = ${JSON.stringify(files, null, 2)};`;
+  await writeFile(join(path, "toc.js"), tocJsContent);
+
 
   console.log("  - Downloading all PDF files...");
   const stats = await recursivelyDownloadManual(page, path, files, mode);
@@ -67,17 +72,10 @@ async function recursivelyDownloadManual(
       if (mode === 'resume') {
           try {
               const fileStats = await stat(filePath);
-              const fileSizeInKB = Math.round(fileStats.size / 1024);
-              // =================================================================
-              // FIX: Only skip if the file is a reasonable size (e.g., > 15KB)
-              // =================================================================
-              if (fileSizeInKB > 15) {
-                console.log(`\x1b[33m${progress} ⏩ Skipping existing file: ${sanitizedName}.pdf (${fileSizeInKB} KB)\x1b[0m`); // Yellow for skipped
+              if (fileStats.size > 15 * 1024) {
+                console.log(`\x1b[33m${progress} ⏩ Skipping existing file: ${sanitizedName}.pdf\x1b[0m`);
                 stats.skipped++;
                 continue;
-              } else {
-                // File exists but is too small, so we'll treat it as corrupt and re-download it.
-                console.log(`\x1b[36m${progress} ⚠️  Found small file (${fileSizeInKB} KB). Re-downloading ${sanitizedName}.pdf...\x1b[0m`); // Cyan for re-download
               }
           } catch (e) {
               // File does not exist, so proceed with download.
@@ -88,7 +86,6 @@ async function recursivelyDownloadManual(
       const htmlUrl = `https://techinfo.toyota.com${value}`;
 
       try {
-        // First navigation to get the final PDF URL
         await page.goto(htmlUrl, { timeout: 60000 });
         const finalUrl = page.url();
 
@@ -96,38 +93,27 @@ async function recursivelyDownloadManual(
           throw new Error(`Page did not redirect to a PDF. Final URL: ${finalUrl}`);
         }
         
-        // Use the browser's own fetch API to get the raw PDF data
-        const pdfArrayBuffer = await page.evaluate(async (url) => {
-            const response = await fetch(url);
-            const buffer = await response.arrayBuffer();
-            return Array.from(new Uint8Array(buffer));
-        }, finalUrl);
+        const pdfStreamResponse = await client.get(finalUrl, {
+            responseType: 'stream',
+        });
 
-        if (!pdfArrayBuffer || pdfArrayBuffer.length === 0) {
-            throw new Error("Downloaded PDF buffer was empty.");
-        }
-
-        const pdfBuffer = Buffer.from(pdfArrayBuffer);
-        await writeFile(filePath, pdfBuffer);
+        await saveStream(pdfStreamResponse.data, filePath);
 
         const fileStats = await stat(filePath);
         const fileSizeInKB = Math.round(fileStats.size / 1024);
         
-        // Check for 0KB files and mark them as a failure
         if (fileStats.size < 1) {
             stats.failed++;
             console.error(`\x1b[31m${progress} ❌ Error processing page ${name}: Downloaded file is empty (0 KB).\x1b[0m`);
             continue;
         }
 
-        // Green for success
         console.log(`\x1b[32m${progress} ✅ Successfully saved ${sanitizedName}.pdf (${fileSizeInKB} KB)\x1b[0m`);
 
         stats.downloaded++;
 
       } catch (e) {
         stats.failed++;
-        // Red for failure
         console.error(`\x1b[31m${progress} ❌ Error processing page ${name}: ${(e as Error).message}\x1b[0m`);
         continue;
       }
