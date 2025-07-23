@@ -3,9 +3,7 @@
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 // =================================================================
 
-// Use the 'stealth' version of playwright.
 import { chromium } from "playwright-extra";
-
 import processCLIArgs, { CLIArgs } from "./processCLIArgs";
 import login from "./api/login";
 import { join, resolve } from "path";
@@ -58,6 +56,19 @@ async function run({ manual, email, password, headed, cookieString }: CLIArgs) {
     Object.values(dirPaths).map((m) => mkdir(m, { recursive: true }))
   );
 
+  // =================================================================
+  // FIX: Re-added the logic to copy the accessor/viewer file
+  // =================================================================
+  console.log("Copying accessor into manuals...");
+  try {
+    const accessorHTML = await readFile(join(__dirname, "..", "accessor/index.html"), "utf-8");
+    await Promise.all(
+      Object.values(dirPaths).map((m) => writeFile(join(m, "index.html"), accessorHTML))
+    );
+  } catch (e) {
+    console.error("Unable to copy accessor file into manuals.", e);
+  }
+
   console.log("Setting up STEALTH Playwright...");
   const browser = await chromium.launch({
     headless: false,
@@ -72,11 +83,9 @@ async function run({ manual, email, password, headed, cookieString }: CLIArgs) {
 
   if (cookieString) {
     console.log("Using cookies from command line...");
-    // More robustly split the cookie string by semicolon and trim whitespace from each part.
     const cookieStrings = cookieString.split(';').map(c => c.trim());
     
     transformedCookies = cookieStrings.map((c) => {
-      // Find the first equals sign to correctly split name and value
       const firstEqual = c.indexOf('=');
       const name = c.substring(0, firstEqual);
       const value = c.substring(firstEqual + 1);
@@ -91,18 +100,15 @@ async function run({ manual, email, password, headed, cookieString }: CLIArgs) {
       };
     });
 
-    // =================================================================
-    // FIX: Also add these cookies to the axios client's cookie jar
-    // =================================================================
     console.log("Populating axios cookie jar...");
     cookieStrings.forEach(cookie => {
-        // We need to trim whitespace from the cookie string
-        if (cookie) { // Ensure we don't process empty strings
+        if (cookie) {
             jar.setCookieSync(cookie, 'https://techinfo.toyota.com');
         }
     });
 
   } else {
+    // This case is now handled by the start.sh script, but we keep it as a fallback.
     console.log("No cookie string provided. Please use the --cookie-string argument.");
     process.exit(1);
   }
