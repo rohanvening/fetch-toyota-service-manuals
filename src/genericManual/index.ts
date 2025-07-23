@@ -6,7 +6,6 @@ import { join } from "path";
 import parseToC, { ParsedToC } from "./parseToC";
 import { Page } from "playwright";
 import { Manual } from "..";
-// saveStream is no longer needed here, but we'll leave the import in case other parts use it
 import saveStream from "../api/saveStream";
 
 export interface DownloadStats {
@@ -89,13 +88,14 @@ async function recursivelyDownloadManual(
           throw new Error(`Page did not redirect to a PDF. Final URL: ${finalUrl}`);
         }
         
-        const pdfResponse = await page.goto(finalUrl);
-        if (!pdfResponse) {
-            throw new Error("Failed to get a response for the PDF file.");
-        }
-        const pdfBuffer = await pdfResponse.body();
-        
-        await writeFile(filePath, pdfBuffer);
+        // =================================================================
+        // FIX: Revert to using the authenticated axios client for the download
+        // =================================================================
+        const pdfStreamResponse = await client.get(finalUrl, {
+            responseType: 'stream',
+        });
+
+        await saveStream(pdfStreamResponse.data, filePath);
 
         const fileStats = await stat(filePath);
         const fileSizeInKB = Math.round(fileStats.size / 1024);
