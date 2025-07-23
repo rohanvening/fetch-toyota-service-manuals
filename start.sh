@@ -163,6 +163,13 @@ FINAL_ARGS=("${NODE_ARGS[@]}")
 FINAL_ARGS+=(--cookie-string "$COOKIE_STRING")
 FINAL_ARGS+=(--mode "$MODE")
 
+# =================================================================
+# DIAGNOSTIC: Print the final command before executing it
+# =================================================================
+echo "Executing command:"
+echo "xvfb-run --auto-servernum npx ts-node src/index.ts ${FINAL_ARGS[*]}"
+echo "----------------------------------------------------"
+
 # Execute the main Node.js script, passing the array of arguments
 # The "${FINAL_ARGS[@]}" syntax ensures that arguments with spaces are handled correctly.
 xvfb-run --auto-servernum npx ts-node src/index.ts "${FINAL_ARGS[@]}"
