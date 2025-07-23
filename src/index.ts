@@ -25,7 +25,6 @@ interface ExtendedCLIArgs extends CLIArgs {
 }
 
 async function run(args: ExtendedCLIArgs) {
-  // Read the cookie string from the environment variable
   const cookieString = process.env.TIS_COOKIE_STRING;
   const { manual, mode = "resume" } = args;
   const genericManuals: Manual[] = [];
@@ -117,13 +116,6 @@ async function run(args: ExtendedCLIArgs) {
       return { name, value, domain: ".toyota.com", path: "/", expires: dayjs().add(1, "day").unix(), httpOnly: false, secure: true, sameSite: "None" };
     });
 
-    console.log("Populating axios cookie jar...");
-    cookieStrings.forEach(cookie => {
-        if (cookie) {
-            jar.setCookieSync(cookie, 'https://techinfo.toyota.com');
-        }
-    });
-
   } else {
     console.log("No cookie string provided via environment variable. Aborting.");
     process.exit(1);
@@ -155,7 +147,8 @@ async function run(args: ExtendedCLIArgs) {
   console.log("Beginning manual downloads...");
   for (const manual of genericManuals) {
     console.log(`Downloading ${manual.raw}... (type = generic)`);
-    await downloadGenericManual(page, manual, dirPaths[manual.id], mode);
+    // Pass the cookieString and mode to the downloader function
+    await downloadGenericManual(page, manual, dirPaths[manual.id], mode, cookieString);
   }
 
   console.log("All manuals downloaded!");
