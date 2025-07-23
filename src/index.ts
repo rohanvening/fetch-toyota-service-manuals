@@ -7,7 +7,7 @@ import { chromium } from "playwright-extra";
 import processCLIArgs, { CLIArgs } from "./processCLIArgs";
 import { join, resolve } from "path";
 import { mkdir, readFile, writeFile, stat } from "fs/promises";
-import downloadGenericManual, { DownloadStats } from "./genericManual"; // Import the new type
+import downloadGenericManual, { DownloadStats } from "./genericManual";
 import { Cookie } from "playwright";
 import { jar } from "./api/client";
 import dayjs from "dayjs";
@@ -151,9 +151,6 @@ async function run(args: ExtendedCLIArgs) {
   }
 
   console.log("Beginning manual downloads...");
-  // =================================================================
-  // NEW: Initialize stats object to track download progress
-  // =================================================================
   const totalStats: DownloadStats = { downloaded: 0, skipped: 0, failed: 0 };
 
   for (const manual of genericManuals) {
@@ -164,9 +161,6 @@ async function run(args: ExtendedCLIArgs) {
     totalStats.failed += manualStats.failed;
   }
 
-  // =================================================================
-  // NEW: Print final summary report
-  // =================================================================
   console.log("\n--- Download Complete ---");
   console.log(`✅ Downloaded: ${totalStats.downloaded}`);
   console.log(`⏩ Skipped:    ${totalStats.skipped}`);
