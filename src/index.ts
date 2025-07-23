@@ -72,9 +72,14 @@ async function run({ manual, email, password, headed, cookieString }: CLIArgs) {
 
   if (cookieString) {
     console.log("Using cookies from command line...");
-    const cookieStrings = cookieString.split("; ");
+    // More robustly split the cookie string by semicolon and trim whitespace from each part.
+    const cookieStrings = cookieString.split(';').map(c => c.trim());
+    
     transformedCookies = cookieStrings.map((c) => {
-      const [name, value] = c.split("=");
+      // Find the first equals sign to correctly split name and value
+      const firstEqual = c.indexOf('=');
+      const name = c.substring(0, firstEqual);
+      const value = c.substring(firstEqual + 1);
       return {
         name, value,
         domain: ".toyota.com",
@@ -92,7 +97,9 @@ async function run({ manual, email, password, headed, cookieString }: CLIArgs) {
     console.log("Populating axios cookie jar...");
     cookieStrings.forEach(cookie => {
         // We need to trim whitespace from the cookie string
-        jar.setCookieSync(cookie.trim(), 'https://techinfo.toyota.com');
+        if (cookie) { // Ensure we don't process empty strings
+            jar.setCookieSync(cookie, 'https://techinfo.toyota.com');
+        }
     });
 
   } else {
