@@ -3,7 +3,7 @@
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 // =================================================================
 
-import { chromium } from "playwright-extra";
+import { chromium, Browser } from "playwright-extra";
 import processCLIArgs, { CLIArgs } from "./processCLIArgs";
 import { join, resolve } from "path";
 import { mkdir, readFile, writeFile, stat } from "fs/promises";
@@ -101,6 +101,22 @@ async function run(args: ExtendedCLIArgs) {
         '--disable-setuid-sandbox'
     ]
   });
+
+  // =================================================================
+  // NEW: Graceful shutdown handler for Ctrl+C
+  // =================================================================
+  const cleanup = async () => {
+    console.log("\nCaught interrupt signal. Shutting down gracefully...");
+    if (browser) {
+      await browser.close();
+      console.log("Browser closed.");
+    }
+    process.exit(0);
+  };
+
+  process.on('SIGINT', cleanup);
+  process.on('SIGTERM', cleanup);
+  // =================================================================
 
   let transformedCookies: Cookie[] = [];
 
