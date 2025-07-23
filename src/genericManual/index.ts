@@ -91,17 +91,13 @@ async function recursivelyDownloadManual(
         }
         
         // =================================================================
-        // FIX: Use the authenticated browser to download the PDF content
+        // FIX: Revert to using the authenticated axios client for the download
         // =================================================================
-        const pdfResponse = await page.goto(finalUrl);
-        if (!pdfResponse) {
-            throw new Error("Failed to get a response for the PDF file.");
-        }
-        // Get the raw PDF data as a buffer
-        const pdfBuffer = await pdfResponse.body();
-        
-        // Save the buffer to a file
-        await writeFile(filePath, pdfBuffer);
+        const pdfStreamResponse = await client.get(finalUrl, {
+            responseType: 'stream',
+        });
+
+        await saveStream(pdfStreamResponse.data, filePath);
 
         const fileStats = await stat(filePath);
         const fileSizeInKB = Math.round(fileStats.size / 1024);
