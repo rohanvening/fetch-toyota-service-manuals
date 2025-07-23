@@ -1,55 +1,12 @@
-import { existsSync } from 'fs';
-import { resolve } from 'path';
-
-// =================================================================
-// Dependency Checker - Runs before anything else
-// =================================================================
-function checkDependencies() {
-  console.log('Checking for required dependencies...');
-  const requiredPackages = [
-    'playwright-extra',
-    'playwright-extra-plugin-stealth',
-    'axios',
-    'dayjs',
-    'command-line-args',
-  ];
-  const missingPackages: string[] = [];
-
-  for (const pkg of requiredPackages) {
-    try {
-      // require.resolve() will throw an error if the package can't be found
-      require.resolve(pkg);
-    } catch (e) {
-      missingPackages.push(pkg);
-    }
-  }
-
-  if (missingPackages.length > 0) {
-    console.error('\nERROR: The following required dependencies are not installed:');
-    missingPackages.forEach(pkg => console.error(`  - ${pkg}`));
-    console.error('\nPlease install them by running the following command:');
-    console.log(`\nyarn add ${missingPackages.join(' ')}\n`);
-    console.error('Or, if you use npm:');
-    console.log(`\nnpm install ${missingPackages.join(' ')}\n`);
-    process.exit(1);
-  }
-
-  console.log('All dependencies are installed.');
-}
-
-// Run the check immediately
-checkDependencies();
-// =================================================================
-
 // Use the 'stealth' version of playwright
 import { chromium } from "playwright-extra";
 import stealthPlugin from "playwright-extra-plugin-stealth";
 
 import processCLIArgs, { CLIArgs } from "./processCLIArgs";
 import login from "./api/login";
-import { join } from "path";
+import { join, resolve } from "path";
 import { mkdir, readFile, writeFile } from "fs/promises";
-import downloadGenericManual from "./genericManual";
+import downloadGenericManual from "./genericManual"; // This is the import causing the error
 import { Cookie } from "playwright";
 import { jar } from "./api/client";
 import dayjs from "dayjs";
