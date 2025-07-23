@@ -1,6 +1,6 @@
 import { AxiosResponse } from "axios";
 import { client } from "../api/client";
-// Import 'writeFile' from the 'fs/promises' module
+// Import  'writeFile' from the 'fs/promises' module
 import { mkdir, writeFile, stat } from "fs/promises";
 import { join } from "path";
 import parseToC, { ParsedToC } from "./parseToC";
