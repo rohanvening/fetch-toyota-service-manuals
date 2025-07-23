@@ -30,7 +30,6 @@ fi
 echo "✅ Base node modules are installed."
 
 # 3. Check for and install specific stealth plugins if missing from package.json
-# This makes the script self-healing.
 missing_stealth=false
 if ! grep -q '"playwright-extra":' package.json; then
     missing_stealth=true
@@ -64,5 +63,5 @@ echo "✅ Playwright browsers are installed."
 echo "--- All Checks Passed. Starting Application ---"
 echo ""
 
-# Execute the main Node.js script, passing along all command-line arguments
-NODE_TLS_REJECT_UNAUTHORIZED=0 ts-node src/index.ts "$@"
+# CORRECTED: Execute the script using npx to ensure ts-node is found.
+npx ts-node src/index.ts "$@"
