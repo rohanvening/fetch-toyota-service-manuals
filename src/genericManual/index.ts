@@ -1,4 +1,4 @@
-import axios, { AxiosResponse } from "axios";
+import { AxiosResponse } from "axios";
 import { client } from "../api/client";
 import { mkdir, writeFile, stat } from "fs/promises";
 import { join } from "path";
@@ -12,30 +12,28 @@ export default async function downloadGenericManual(
   manualData: Manual,
   path: string,
   mode: "fresh" | "resume" | "overwrite",
-  cookieString: string | undefined // Accept the cookie string
+  cookieString: string | undefined // Keep for PDF downloads
 ) {
   if (!cookieString) {
     throw new Error("Cannot download table of contents: Cookie string is missing.");
   }
 
-  let tocReq: AxiosResponse;
+  let tocContent: string;
   try {
-    console.log("Downloading table of contents...");
-    // Use a direct axios call with a full set of browser headers
-    tocReq = await axios.get(
-      `https://techinfo.toyota.com/t3Portal/external/en/${manualData.type}/${manualData.id}/toc.xml`,
-      {
-        responseType: "text",
-        headers: {
-          Cookie: cookieString,
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
-          "Accept-Language": "en-US,en;q=0.9",
-          "Connection": "keep-alive",
-          "Referer": "https://techinfo.toyota.com/t3Portal/",
-        },
-      }
-    );
+    console.log("Downloading table of contents using authenticated browser...");
+    // =================================================================
+    // FIX: Use the authenticated Playwright page to fetch the XML
+    // =================================================================
+    const tocUrl = `https://techinfo.toyota.com/t3Portal/external/en/${manualData.type}/${manualData.id}/toc.xml`;
+    const response = await page.goto(tocUrl);
+
+    if (!response || !response.ok()) {
+        throw new Error(`Failed to fetch toc.xml, status: ${response?.status()}`);
+    }
+    
+    // Get the raw text content of the page, which is our XML
+    tocContent = await response.text();
+
   } catch (e: any) {
     if (e.response && e.response.status === 404) {
       throw new Error(`Manual ${manualData.id} doesn't exist.`);
@@ -43,18 +41,14 @@ export default async function downloadGenericManual(
     throw new Error(`Unknown error getting table of contents: ${e}`);
   }
 
-  // =================================================================
-  // NEW: Add diagnostic logging for the XML parsing step
-  // =================================================================
   let files: ParsedToC;
   try {
-    files = parseToC(tocReq.data, manualData.year);
+    files = parseToC(tocContent, manualData.year);
   } catch (e) {
       console.error("CRITICAL: Failed to parse the Table of Contents. The server likely returned an HTML error page instead of XML.");
       console.error("--- Start of Server Response ---");
-      console.log(tocReq.data);
+      console.log(tocContent);
       console.error("--- End of Server Response ---");
-      // Re-throw the original error to stop the script
       throw e;
   }
 
