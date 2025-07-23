@@ -132,10 +132,6 @@ if [ -z "$MODE" ]; then
     esac
 fi
 
-# Re-assemble the arguments for the Node.js script
-set -- "${NODE_ARGS[@]}" --cookie-string "$COOKIE_STRING" --mode "$MODE"
-
-
 # =================================================================
 # Pre-flight Dependency Checks
 # =================================================================
@@ -157,5 +153,16 @@ echo "✅ Base node modules are installed."
 echo "--- All Checks Passed. Starting Application ---"
 echo ""
 
-# Execute the main Node.js script inside the virtual screen buffer
-xvfb-run --auto-servernum npx ts-node src/index.ts "$@"
+# =================================================================
+# FIX: Robustly build and pass arguments to the Node.js script
+# =================================================================
+# Start with the arguments that are not --cookie-string or --mode
+FINAL_ARGS=("${NODE_ARGS[@]}")
+
+# Safely add the cookie string and mode to the final arguments array
+FINAL_ARGS+=(--cookie-string "$COOKIE_STRING")
+FINAL_ARGS+=(--mode "$MODE")
+
+# Execute the main Node.js script, passing the array of arguments
+# The "${FINAL_ARGS[@]}" syntax ensures that arguments with spaces are handled correctly.
+xvfb-run --auto-servernum npx ts-node src/index.ts "${FINAL_ARGS[@]}"
