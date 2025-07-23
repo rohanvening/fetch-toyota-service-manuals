@@ -50,11 +50,9 @@ echo "✅ Stealth plugins are configured."
 
 # 4. Check for and create TypeScript declaration file for the stealth plugin
 # This fixes the "Could not find a declaration file" error.
-TYPE_DECLARATION_FILE="src/types.d.ts"
+TYPE_DECLARATION_FILE="types.d.ts" # Create file in the root directory
 if [ ! -f "$TYPE_DECLARATION_FILE" ]; then
     echo "⚠️ TypeScript declaration file for stealth plugin not found. Creating it..."
-    # Create the src directory if it doesn't exist
-    mkdir -p src
     # Create the declaration file with the required content
     echo "declare module 'playwright-extra-plugin-stealth';" > "$TYPE_DECLARATION_FILE"
 fi
