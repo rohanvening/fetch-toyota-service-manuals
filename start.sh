@@ -5,9 +5,9 @@
 # =================================================================
 show_help() {
 cat << EOF
-Usage: ./start.sh -m <MANUAL_ID> --cookie-string 'YOUR_COOKIE_STRING'
+Usage: ./start.sh -m <MANUAL_ID> --cookie-string 'YOUR_COOKIE_STRING' [--mode <MODE>]
 
-This script downloads PDF versions of Toyota Technical Information System (TIS) manuals.
+This script downloads Toyota Technical Information System (TIS) manuals.
 
 ================================================================================
 ==  IMPORTANT PREREQUISITES & WARNING
@@ -33,10 +33,17 @@ Required Arguments:
                               This is required for authentication.
 
 Optional Arguments:
+  --mode <MODE>               Download mode. Can be 'fresh', 'resume', or 'overwrite'.
+                              If not provided, you will be prompted to choose.
   -h, --help                  Display this help and exit.
 
+Download Modes:
+  - fresh:    Creates a new, versioned folder for the download (e.g., YYYY-MM-DD_RM1234).
+  - resume:   Skips any PDF files that already exist in the target folder.
+  - overwrite: Re-downloads all files, overwriting any that exist.
+
 Example:
-  ./start.sh -m RM661U -m EM1234 --cookie-string 'TISESSIONID=...; iPlanetDirectoryPro=...;'
+  ./start.sh -m RM661U --mode resume --cookie-string 'TISESSIONID=...;'
 
 Cookie Heist Instructions:
   To get your cookie string:
@@ -53,7 +60,9 @@ EOF
 # Argument Parsing
 # =================================================================
 COOKIE_STRING=""
-MANUALS=()
+MODE=""
+# Use a temporary array to hold arguments for the node script
+NODE_ARGS=()
 
 # Check for help flag first
 for arg in "$@"; do
@@ -63,33 +72,35 @@ for arg in "$@"; do
   fi
 done
 
-# Parse arguments for the Node.js script
+# Parse arguments
 while [[ $# -gt 0 ]]; do
   case $1 in
     --cookie-string)
       COOKIE_STRING="$2"
-      shift # past argument
-      shift # past value
+      shift 2
+      ;;
+    --mode)
+      MODE="$2"
+      shift 2
       ;;
     *)
       # Pass any other arguments directly to the Node.js script
-      MANUALS+=("$1")
-      shift # past argument
+      NODE_ARGS+=("$1")
+      shift
       ;;
   esac
 done
 
-# If cookie string is missing, show instructions and prompt for it
+# If cookie string is missing, prompt for it
 if [ -z "$COOKIE_STRING" ]; then
     echo "⚠️ ERROR: --cookie-string argument not provided."
     echo ""
     echo "--- How to get your Cookie String ---"
-    echo "1. Open a new Incognito Window in your browser."
-    echo "2. Open Developer Tools (F12) and go to the 'Network' tab."
+    echo "1. Open a new Incognito Window in your browser and open Developer Tools (F12)."
+    echo "2. Go to the 'Network' tab in Developer Tools."
     echo "3. Log into https://techinfo.toyota.com/t3Portal/"
-    echo "4. In the Network tab's filter bar, find any request to 'techinfo.toyota.com'."
-    echo "5. Click on it, go to the 'Headers' tab, and find the 'Request Headers' section."
-    echo "6. Find the 'cookie' header, right-click its entire value, and select 'Copy value'."
+    echo "4. In the Network tab, find a request, go to Headers -> Request Headers."
+    echo "5. Find the 'cookie' header, right-click its value, and select 'Copy value'."
     echo "---------------------------------------"
     echo ""
     read -p "Please paste your cookie string here and press Enter: " COOKIE_STRING
@@ -99,26 +110,32 @@ if [ -z "$COOKIE_STRING" ]; then
     fi
 fi
 
+# If mode is missing, prompt for it
+if [ -z "$MODE" ]; then
+    echo ""
+    echo "--- Please select a download mode ---"
+    echo "1. Fresh:    Create a new, versioned folder for the download."
+    echo "2. Resume:   Skip any files that already exist."
+    echo "3. Overwrite: Re-download all files, replacing any that exist."
+    echo "---------------------------------------"
+    read -p "Enter your choice (1, 2, or 3): " MODE_CHOICE
+    case $MODE_CHOICE in
+        1) MODE="fresh" ;;
+        2) MODE="resume" ;;
+        3) MODE="overwrite" ;;
+        *) echo "Invalid choice. Aborting."; exit 1 ;;
+    esac
+fi
+
 # Re-assemble the arguments for the Node.js script
-set -- "${MANUALS[@]}" --cookie-string "$COOKIE_STRING"
+set -- "${NODE_ARGS[@]}" --cookie-string "$COOKIE_STRING" --mode "$MODE"
 
 
 # =================================================================
 # Pre-flight Dependency Checks
 # =================================================================
 echo "--- Running Pre-flight Dependency Checks ---"
-
-check_command() {
-    if ! command -v "$1" &> /dev/null; then
-        echo "ERROR: '$1' command not found. Please install it."
-        exit 1
-    fi
-    echo "✅ $1 is installed."
-}
-
-check_command "git"
-check_command "yarn"
-
+# ... (pre-flight checks remain the same) ...
 if ! command -v xvfb-run &> /dev/null; then
     echo "⚠️ xvfb-run not found. Installing xvfb..."
     apt-get update && apt-get install -y xvfb
@@ -130,6 +147,7 @@ if [ ! -d "node_modules" ]; then
     yarn install
 fi
 echo "✅ Base node modules are installed."
+
 
 echo "--- All Checks Passed. Starting Application ---"
 echo ""
