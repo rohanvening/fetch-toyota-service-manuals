@@ -7,7 +7,7 @@ import { chromium } from "playwright-extra";
 import processCLIArgs, { CLIArgs } from "./processCLIArgs";
 import login from "./api/login";
 import { join, resolve } from "path";
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { mkdir, readFile, writeFile, stat } from "fs/promises";
 import downloadGenericManual from "./genericManual";
 import { Cookie } from "playwright";
 import { jar } from "./api/client";
@@ -20,7 +20,14 @@ export interface Manual {
   raw: string;
 }
 
-async function run({ manual, email, password, headed, cookieString }: CLIArgs) {
+// Add 'mode' to the CLI arguments interface
+// Note: You may need to update 'processCLIArgs.ts' to support this new argument
+interface ExtendedCLIArgs extends CLIArgs {
+    mode?: "fresh" | "resume" | "overwrite";
+}
+
+async function run(args: ExtendedCLIArgs) {
+  const { manual, cookieString, mode = "resume" } = args; // Default to resume mode
   const genericManuals: Manual[] = [];
   const rawManualIds = new Set(manual.map((m) => m.toUpperCase().trim()));
 
@@ -48,9 +55,36 @@ async function run({ manual, email, password, headed, cookieString }: CLIArgs) {
     }
   });
 
-  const dirPaths: { [manualId: string]: string } = Object.fromEntries(
+  let dirPaths: { [manualId: string]: string } = Object.fromEntries(
     genericManuals.map((m) => [m.id, resolve(join(".", "manuals", m.raw))])
   );
+
+  // =================================================================
+  // NEW: Handle download modes
+  // =================================================================
+  if (mode === 'fresh') {
+      console.log("Mode: Fresh Download. Creating versioned folders...");
+      const datePrefix = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      
+      const versionedDirPaths: { [manualId: string]: string } = {};
+      for (const m of genericManuals) {
+          let versionedPath = resolve(join(".", "manuals", `${datePrefix}_${m.raw}`));
+          
+          let counter = 1;
+          while (true) {
+              try {
+                  await stat(versionedPath);
+                  versionedPath = resolve(join(".", "manuals", `${datePrefix}_${m.raw}_(${++counter})`));
+              } catch (e) {
+                  break;
+              }
+          }
+          versionedDirPaths[m.id] = versionedPath;
+      }
+      dirPaths = versionedDirPaths;
+  } else {
+      console.log(`Mode: ${mode.charAt(0).toUpperCase() + mode.slice(1)}.`);
+  }
 
   await Promise.all(
     Object.values(dirPaths).map((m) => mkdir(m, { recursive: true }))
@@ -86,15 +120,7 @@ async function run({ manual, email, password, headed, cookieString }: CLIArgs) {
       const firstEqual = c.indexOf('=');
       const name = c.substring(0, firstEqual);
       const value = c.substring(firstEqual + 1);
-      return {
-        name, value,
-        domain: ".toyota.com",
-        path: "/",
-        expires: dayjs().add(1, "day").unix(),
-        httpOnly: false,
-        secure: true,
-        sameSite: "None",
-      };
+      return { name, value, domain: ".toyota.com", path: "/", expires: dayjs().add(1, "day").unix(), httpOnly: false, secure: true, sameSite: "None" };
     });
 
     console.log("Populating axios cookie jar...");
@@ -117,19 +143,11 @@ async function run({ manual, email, password, headed, cookieString }: CLIArgs) {
 
   const page = await context.newPage();
 
-  // =================================================================
-  // NEW: Check if the provided cookie is valid
-  // =================================================================
   console.log("Checking that Playwright is logged in by validating cookie...");
   try {
     await page.goto("https://techinfo.toyota.com/t3Portal/");
-    // After loading, check if the URL indicates a redirect to the login page.
     if (page.url().includes("login.toyota.com")) {
-      console.error("\n================================================================");
-      console.error("ERROR: Cookie validation failed. You were redirected to a login page.");
-      console.error("Your provided cookie may be expired or invalid.");
-      console.error("Please perform the 'cookie heist' again to get a fresh cookie string.");
-      console.error("================================================================\n");
+      console.error("\nERROR: Cookie validation failed. You were redirected to a login page.");
       await browser.close();
       process.exit(1);
     }
@@ -140,11 +158,11 @@ async function run({ manual, email, password, headed, cookieString }: CLIArgs) {
       process.exit(1);
   }
 
-
   console.log("Beginning manual downloads...");
   for (const manual of genericManuals) {
     console.log(`Downloading ${manual.raw}... (type = generic)`);
-    await downloadGenericManual(page, manual, dirPaths[manual.id]);
+    // Pass the mode to the downloader function
+    await downloadGenericManual(page, manual, dirPaths[manual.id], mode);
   }
 
   console.log("All manuals downloaded!");
