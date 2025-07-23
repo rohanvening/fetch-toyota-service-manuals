@@ -7,7 +7,6 @@ import { Page } from "playwright";
 import { Manual } from "..";
 import saveStream from "../api/saveStream";
 
-// This 'export default' is the critical line that fixes the error.
 export default async function downloadGenericManual(
   page: Page,
   manualData: Manual,
@@ -49,12 +48,16 @@ async function recursivelyDownloadManual(
       console.log(`Processing page ${sanitizedName}...`);
 
       try {
+        console.log(`   --> Navigating to ${htmlUrl}`);
         await page.goto(htmlUrl, { timeout: 60000 });
         
         const finalUrl = page.url();
         console.log(`   --> Navigation complete. Final URL is: ${finalUrl}`);
 
-        if (!finalUrl.endsWith('.pdf')) {
+        // =================================================================
+        // FIX: Change '.endsWith' to '.includes' to handle query parameters
+        // =================================================================
+        if (!finalUrl.includes('.pdf')) {
           throw new Error(`Page did not redirect to a PDF. Final URL: ${finalUrl}`);
         }
         
