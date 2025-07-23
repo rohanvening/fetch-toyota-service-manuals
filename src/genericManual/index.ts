@@ -1,12 +1,17 @@
 import { AxiosResponse } from "axios";
 import { client } from "../api/client";
-// Import 'writeFile' from the 'fs/promises' module
 import { mkdir, writeFile, stat } from "fs/promises";
 import { join } from "path";
 import parseToC, { ParsedToC } from "./parseToC";
 import { Page } from "playwright";
 import { Manual } from "..";
-import saveStream from "../api/saveStream";
+
+/**
+ * Sanitizes a string to make it safe for use as a Windows-compatible filename.
+ */
+function sanitizeFileName(name: string): string {
+  return name.replace(/[\/\\:*?"<>|]/g, "-").replace(/\s+/g, " ").trim();
+}
 
 export interface DownloadStats {
   downloaded: number;
@@ -59,52 +64,46 @@ async function recursivelyDownloadManual(
   const entries = Object.entries(toc);
   for (const [index, [name, value]] of entries.entries()) {
     if (typeof value === "string") {
-      const sanitizedName = name.replace(/\//g, "-");
+      const sanitizedName = sanitizeFileName(name);
       const filePath = `${join(path, sanitizedName)}.pdf`;
-      
       const progress = `[${(index + 1).toString().padStart(3, ' ')}/${entries.length}]`;
-      
+
       if (mode === 'resume') {
-          try {
-              const fileStats = await stat(filePath);
-              const fileSizeInKB = Math.round(fileStats.size / 1024);
-              // =================================================================
-              // FIX: Only skip if the file is a reasonable size (e.g., > 15KB)
-              // =================================================================
-              if (fileSizeInKB > 15) {
-                console.log(`\x1b[33m${progress} ⏩ Skipping existing file: ${sanitizedName}.pdf (${fileSizeInKB} KB)\x1b[0m`); // Yellow for skipped
-                stats.skipped++;
-                continue;
-              } else {
-                // File exists but is too small, so we'll treat it as corrupt and re-download it.
-                console.log(`\x1b[36m${progress} ⚠️  Found small file (${fileSizeInKB} KB). Re-downloading ${sanitizedName}.pdf...\x1b[0m`); // Cyan for re-download
-              }
-          } catch (e) {
-              // File does not exist, so proceed with download.
+        try {
+          const fileStats = await stat(filePath);
+          const fileSizeInKB = Math.round(fileStats.size / 1024);
+
+          if (fileSizeInKB > 15) {
+            console.log(`\x1b[33m${progress} ⏩ Skipping existing file: ${sanitizedName}.pdf (${fileSizeInKB} KB)\x1b[0m`);
+            stats.skipped++;
+            continue;
+          } else {
+            console.log(`\x1b[36m${progress} ⚠️  Found small file (${fileSizeInKB} KB). Re-downloading ${sanitizedName}.pdf...\x1b[0m`);
           }
+        } catch {
+          // File does not exist — will proceed to download
+        }
       }
 
       console.log(`${progress} Processing: ${sanitizedName}...`);
       const htmlUrl = `https://techinfo.toyota.com${value}`;
 
       try {
-        // First navigation to get the final PDF URL
         await page.goto(htmlUrl, { timeout: 60000 });
         const finalUrl = page.url();
 
         if (!finalUrl.includes('.pdf')) {
           throw new Error(`Page did not redirect to a PDF. Final URL: ${finalUrl}`);
         }
-        
-        // Use the browser's own fetch API to get the raw PDF data
+
         const pdfArrayBuffer = await page.evaluate(async (url) => {
-            const response = await fetch(url);
-            const buffer = await response.arrayBuffer();
-            return Array.from(new Uint8Array(buffer));
+          const response = await fetch(url);
+          const buffer = await response.arrayBuffer();
+          return Array.from(new Uint8Array(buffer));
         }, finalUrl);
 
         if (!pdfArrayBuffer || pdfArrayBuffer.length === 0) {
-            throw new Error("Downloaded PDF buffer was empty.");
+          throw new Error("Downloaded PDF buffer was empty.");
         }
 
         const pdfBuffer = Buffer.from(pdfArrayBuffer);
@@ -112,36 +111,36 @@ async function recursivelyDownloadManual(
 
         const fileStats = await stat(filePath);
         const fileSizeInKB = Math.round(fileStats.size / 1024);
-        
-        // Check for 0KB files and mark them as a failure
+
         if (fileStats.size < 1) {
-            stats.failed++;
-            console.error(`\x1b[31m${progress} ❌ Error processing page ${name}: Downloaded file is empty (0 KB).\x1b[0m`);
-            continue;
+          stats.failed++;
+          console.error(`\x1b[31m${progress} ❌ Error: Downloaded file is empty (0 KB).\x1b[0m`);
+          continue;
         }
 
-        // Green for success
-        console.log(`\x1b[32m${progress} ✅ Successfully saved ${sanitizedName}.pdf (${fileSizeInKB} KB)\x1b[0m`);
-
+        console.log(`\x1b[32m${progress} ✅ Saved ${sanitizedName}.pdf (${fileSizeInKB} KB)\x1b[0m`);
         stats.downloaded++;
 
       } catch (e) {
         stats.failed++;
-        // Red for failure
-        console.error(`\x1b[31m${progress} ❌ Error processing page ${name}: ${(e as Error).message}\x1b[0m`);
+        console.error(`\x1b[31m${progress} ❌ Error processing ${name}: ${(e as Error).message}\x1b[0m`);
         continue;
       }
+
     } else {
-        const newPath = join(path, name.replace(/\//g, "-"));
-        try {
-          await mkdir(newPath, { recursive: true });
-        } catch (e) {
-          if ((e as any).code !== "EEXIST") {
-            console.log(`Could not create directory ${newPath}. Skipping section.`);
-            continue;
-          }
+      const sanitizedFolder = sanitizeFileName(name);
+      const newPath = join(path, sanitizedFolder);
+
+      try {
+        await mkdir(newPath, { recursive: true });
+      } catch (e: any) {
+        if (e.code !== "EEXIST") {
+          console.log(`Could not create directory ${newPath}. Skipping section.`);
+          continue;
         }
-        await recursivelyDownloadManual(page, newPath, value, mode, stats);
+      }
+
+      await recursivelyDownloadManual(page, newPath, value, mode, stats);
     }
   }
   return stats;
