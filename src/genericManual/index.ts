@@ -21,9 +21,7 @@ export default async function downloadGenericManual(
   let tocReq: AxiosResponse;
   try {
     console.log("Downloading table of contents...");
-    // =================================================================
-    // FIX: Use a direct axios call with a full set of browser headers
-    // =================================================================
+    // Use a direct axios call with a full set of browser headers
     tocReq = await axios.get(
       `https://techinfo.toyota.com/t3Portal/external/en/${manualData.type}/${manualData.id}/toc.xml`,
       {
@@ -34,7 +32,6 @@ export default async function downloadGenericManual(
           "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
           "Accept-Language": "en-US,en;q=0.9",
           "Connection": "keep-alive",
-          // This Referer header is the critical missing piece
           "Referer": "https://techinfo.toyota.com/t3Portal/",
         },
       }
@@ -46,7 +43,21 @@ export default async function downloadGenericManual(
     throw new Error(`Unknown error getting table of contents: ${e}`);
   }
 
-  const files = parseToC(tocReq.data, manualData.year);
+  // =================================================================
+  // NEW: Add diagnostic logging for the XML parsing step
+  // =================================================================
+  let files: ParsedToC;
+  try {
+    files = parseToC(tocReq.data, manualData.year);
+  } catch (e) {
+      console.error("CRITICAL: Failed to parse the Table of Contents. The server likely returned an HTML error page instead of XML.");
+      console.error("--- Start of Server Response ---");
+      console.log(tocReq.data);
+      console.error("--- End of Server Response ---");
+      // Re-throw the original error to stop the script
+      throw e;
+  }
+
   await writeFile(join(path, "toc.json"), JSON.stringify(files, null, 2));
 
   console.log("Downloading full manual...");
