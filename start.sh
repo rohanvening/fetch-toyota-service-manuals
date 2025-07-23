@@ -7,7 +7,23 @@ show_help() {
 cat << EOF
 Usage: ./start.sh -m <MANUAL_ID> --cookie-string 'YOUR_COOKIE_STRING'
 
-This script downloads Toyota Technical Information System (TIS) manuals.
+This script downloads PDF versions of Toyota Technical Information System (TIS) manuals.
+
+================================================================================
+==  IMPORTANT PREREQUISITES & WARNING
+================================================================================
+1.  A valid TIS subscription is REQUIRED. A 48-hour subscription is sufficient.
+    You can purchase one from: https://techinfo.toyota.com
+
+2.  These manuals are copyrighted by Toyota. This tool is for personal archival
+    purposes only. DO NOT SHARE the downloaded manuals.
+
+3.  You must find your vehicle's Manual ID from the TIS portal after logging in.
+    - Navigate to your vehicle's Repair Manual (RM) or Electrical Wiring Diagram (EWD).
+    - When the viewer window pops up, look at the URL.
+    - The Manual ID will be a code like 'RM12345' or 'EM12345'.
+
+================================================================================
 
 Required Arguments:
   -m, --manual <MANUAL_ID>    The ID of the manual to download (e.g., RM661U).
@@ -23,7 +39,7 @@ Example:
   ./start.sh -m RM661U -m EM1234 --cookie-string 'TISESSIONID=...; iPlanetDirectoryPro=...;'
 
 Cookie Heist Instructions:
-  If you do not provide a cookie string, you will be prompted to enter one. To get it:
+  To get your cookie string:
   1. Open a new Incognito Window in your browser.
   2. Open Developer Tools (F12) and go to the "Network" tab.
   3. Log into https://techinfo.toyota.com/t3Portal/
