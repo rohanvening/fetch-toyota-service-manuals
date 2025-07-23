@@ -56,9 +56,6 @@ async function run({ manual, email, password, headed, cookieString }: CLIArgs) {
     Object.values(dirPaths).map((m) => mkdir(m, { recursive: true }))
   );
 
-  // =================================================================
-  // FIX: Re-added the logic to copy the accessor/viewer file
-  // =================================================================
   console.log("Copying accessor into manuals...");
   try {
     const accessorHTML = await readFile(join(__dirname, "..", "accessor/index.html"), "utf-8");
@@ -108,7 +105,6 @@ async function run({ manual, email, password, headed, cookieString }: CLIArgs) {
     });
 
   } else {
-    // This case is now handled by the start.sh script, but we keep it as a fallback.
     console.log("No cookie string provided. Please use the --cookie-string argument.");
     process.exit(1);
   }
@@ -121,8 +117,29 @@ async function run({ manual, email, password, headed, cookieString }: CLIArgs) {
 
   const page = await context.newPage();
 
-  console.log("Checking that Playwright is logged in...");
-  await page.goto("https://techinfo.toyota.com/t3Portal/");
+  // =================================================================
+  // NEW: Check if the provided cookie is valid
+  // =================================================================
+  console.log("Checking that Playwright is logged in by validating cookie...");
+  try {
+    await page.goto("https://techinfo.toyota.com/t3Portal/");
+    // After loading, check if the URL indicates a redirect to the login page.
+    if (page.url().includes("login.toyota.com")) {
+      console.error("\n================================================================");
+      console.error("ERROR: Cookie validation failed. You were redirected to a login page.");
+      console.error("Your provided cookie may be expired or invalid.");
+      console.error("Please perform the 'cookie heist' again to get a fresh cookie string.");
+      console.error("================================================================\n");
+      await browser.close();
+      process.exit(1);
+    }
+    console.log("Cookie appears to be valid. Proceeding with downloads.");
+  } catch (e) {
+      console.error("An error occurred during cookie validation:", e);
+      await browser.close();
+      process.exit(1);
+  }
+
 
   console.log("Beginning manual downloads...");
   for (const manual of genericManuals) {
