@@ -167,4 +167,53 @@ async function run(args: ExtendedCLIArgs) {
     storageState: { cookies: transformedCookies, origins: [] },
     viewport: { width: 1920, height: 1080 },
     userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Ch
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
+  });
+
+  const page = await context.newPage();
+
+  console.log("Checking that Playwright is logged in by validating cookie...");
+  try {
+    await page.goto("https://techinfo.toyota.com/t3Portal/");
+    if (page.url().includes("login.toyota.com")) {
+      console.error(
+        "\nERROR: Cookie validation failed. You were redirected to a login page."
+      );
+      await browser.close();
+      process.exit(1);
+    }
+    console.log("Cookie appears to be valid. Proceeding with downloads.");
+  } catch (e) {
+    console.error("An error occurred during cookie validation:", e);
+    await browser.close();
+    process.exit(1);
+  }
+
+  console.log("Beginning manual downloads...");
+  const totalStats: DownloadStats = { downloaded: 0, skipped: 0, failed: 0 };
+
+  for (const manual of genericManuals) {
+    console.log(`\nDownloading ${manual.raw}...`);
+    const manualStats = await downloadGenericManual(
+      page,
+      manual,
+      dirPaths[manual.id],
+      mode
+    );
+    totalStats.downloaded += manualStats.downloaded;
+    totalStats.skipped += manualStats.skipped;
+    totalStats.failed += manualStats.failed;
+  }
+
+  console.log("\n--- Download Complete ---");
+  console.log(`✅ Downloaded: ${totalStats.downloaded}`);
+  console.log(`⏩ Skipped:    ${totalStats.skipped}`);
+  console.log(`❌ Failed:     ${totalStats.failed}`);
+  console.log("-------------------------");
+
+  await browser.close();
+  process.exit(0);
+}
+
+const args = processCLIArgs();
+run(args);
