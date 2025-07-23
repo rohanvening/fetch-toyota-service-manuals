@@ -3,12 +3,9 @@ import commandLineUsage from "command-line-usage";
 
 export interface CLIArgs {
   manual: string[];
-  email?: string;
-  password?: string;
-  cookieString?: string;
   headed?: boolean;
   help?: boolean;
-  mode?: "fresh" | "resume" | "overwrite"; // Add the new mode option
+  mode?: "fresh" | "resume" | "overwrite";
 }
 
 const sections = [
@@ -26,14 +23,7 @@ const sections = [
         type: String,
         multiple: true,
         description:
-          "Required. Manual ID(s) to download. Use multiple times for multiple manuals.\nFor non-electrical manuals, add @YEAR to the end to only download pages for that year.",
-      },
-      {
-        name: "cookie-string",
-        alias: "c",
-        type: String,
-        description:
-          "Required. Your TIS cookie string. If you don't know what this is, don't use it.",
+          "Required. Manual ID(s) to download. Use multiple times for multiple manuals.",
       },
       {
         name: "mode",
@@ -58,8 +48,7 @@ const usage = commandLineUsage(sections);
 
 const optionDefinitions = [
   { name: "manual", alias: "m", type: String, multiple: true },
-  { name: "cookie-string", alias: "c", type: String },
-  { name: "mode", type: String }, // Define the new mode argument
+  { name: "mode", type: String },
   { name: "headed", alias: "h", type: Boolean },
   { name: "help", type: Boolean },
 ];
