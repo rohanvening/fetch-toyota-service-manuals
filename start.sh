@@ -1,27 +1,24 @@
 #!/bin/bash
 
-# This script checks for all necessary system dependencies before running the application.
+# This script checks for all necessary system and project dependencies before running the application.
 
 echo "--- Running Pre-flight Dependency Checks ---"
 
-# 1. Check for Git
-if ! command -v git &> /dev/null
-then
-    echo "ERROR: 'git' command not found. Please install Git to continue."
-    exit 1
-fi
-echo "✅ Git is installed."
+# Function to check for a command
+check_command() {
+    if ! command -v "$1" &> /dev/null
+    then
+        echo "ERROR: '$1' command not found. Please install it to continue."
+        exit 1
+    fi
+    echo "✅ $1 is installed."
+}
 
-# 2. Check for Yarn
-if ! command -v yarn &> /dev/null
-then
-    echo "ERROR: 'yarn' command not found. Please install Yarn to continue."
-    echo "Installation instructions: https://classic.yarnpkg.com/en/docs/install"
-    exit 1
-fi
-echo "✅ Yarn is installed."
+# 1. Check for system tools
+check_command "git"
+check_command "yarn"
 
-# 3. Check for Node.js modules
+# 2. Check for base Node.js modules
 if [ ! -d "node_modules" ]; then
     echo "⚠️ Node modules not found. Running 'yarn install'..."
     yarn install
@@ -30,13 +27,33 @@ if [ ! -d "node_modules" ]; then
         exit 1
     fi
 fi
-echo "✅ Node modules are installed."
+echo "✅ Base node modules are installed."
+
+# 3. Check for and install specific stealth plugins if missing from package.json
+# This makes the script self-healing.
+missing_stealth=false
+if ! grep -q '"playwright-extra":' package.json; then
+    missing_stealth=true
+fi
+if ! grep -q '"playwright-extra-plugin-stealth":' package.json; then
+    missing_stealth=true
+fi
+
+if [ "$missing_stealth" = true ]; then
+    echo "⚠️ Stealth plugins not found in package.json. Running 'yarn add'..."
+    yarn add playwright-extra playwright-extra-plugin-stealth
+    if [ $? -ne 0 ]; then
+        echo "ERROR: Failed to add stealth plugins. Please check for errors."
+        exit 1
+    fi
+fi
+echo "✅ Stealth plugins are configured."
+
 
 # 4. Check for Playwright browsers
-# We need to check for the existence of the playwright-extra browser cache
 if [ ! -d "node_modules/playwright-extra/.local-browsers" ]; then
-    echo "⚠️ Playwright browsers not found. Running 'npx playwright install --with-deps chromium'..."
-    npx playwright install --with-deps chromium
+    echo "⚠️ Playwright browsers not found. Running 'npx playwright install chromium'..."
+    npx playwright install chromium
     if [ $? -ne 0 ]; then
         echo "ERROR: Playwright browser installation failed. Please check for errors."
         exit 1
