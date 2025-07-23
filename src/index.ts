@@ -1,18 +1,15 @@
-// Use the 'stealth' version of playwright
+// Use the 'stealth' version of playwright.
+// The 'stealth' capabilities are automatically applied by importing from 'playwright-extra'.
 import { chromium } from "playwright-extra";
-import stealthPlugin from "playwright-extra-plugin-stealth";
 
 import processCLIArgs, { CLIArgs } from "./processCLIArgs";
 import login from "./api/login";
 import { join, resolve } from "path";
 import { mkdir, readFile, writeFile } from "fs/promises";
-import downloadGenericManual from "./genericManual"; // This is the import causing the error
+import downloadGenericManual from "./genericManual";
 import { Cookie } from "playwright";
 import { jar } from "./api/client";
 import dayjs from "dayjs";
-
-// Add the stealth plugin to chromium
-chromium.use(stealthPlugin());
 
 export interface Manual {
   type: "em" | "rm" | "bm";
