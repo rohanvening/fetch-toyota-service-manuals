@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manual Viewer</title>
+    <!-- Load the data script first -->
     <script src="toc.js"></script>
     <style>
         body {
@@ -115,21 +116,20 @@
 
     <div id="content-pane">
         <iframe id="pdf-viewer" name="pdf-viewer-frame">
-            <!-- The welcome message will be shown inside the iframe initially -->
             <p>Your browser does not support iframes.</p>
         </iframe>
     </div>
-
+    
     <script>
-        // FIX: Use the 'load' event to ensure all scripts are loaded before execution
+        // Use 'load' event to ensure toc.js has been fully processed
         window.addEventListener("load", function() {
             const tocContainer = document.getElementById('toc-container');
             const tocStatus = document.getElementById('toc-status');
             const pdfViewer = document.getElementById('pdf-viewer');
 
-            // Set initial welcome message
             pdfViewer.srcdoc = `<div style="font-family: sans-serif; color: #888; text-align: center; height: 100%; display: flex; justify-content: center; align-items: center;"><h1>Welcome!</h1><p>Select a section from the menu to view a PDF.</p></div>`;
 
+            // FIX: Check for document.toc, which is created by toc.js
             if (typeof document.toc !== 'undefined') {
                 tocStatus.style.display = 'none';
                 const tocTree = buildTocHtml(document.toc);
@@ -137,9 +137,9 @@
             } else {
                 tocStatus.textContent = "Error: Could not load toc.js or document.toc is not defined.";
                 tocStatus.style.color = 'red';
+                console.error("Failed to find document.toc. Ensure toc.js is in the same directory and loaded correctly.");
             }
 
-            // Function to recursively build the HTML for the ToC
             function buildTocHtml(tocNode, path = []) {
                 const ul = document.createElement('ul');
                 if (path.length > 0) {
@@ -151,21 +151,23 @@
                     const currentPath = [...path, key];
 
                     if (typeof tocNode[key] === 'string') {
-                        // This is a file link
                         const a = document.createElement('a');
                         const sanitizedFileName = currentPath.map(p => p.replace(/\//g, "-")).join('/');
                         a.href = `${sanitizedFileName}.pdf`;
                         a.textContent = key;
-                        a.target = 'pdf-viewer-frame'; // Target the iframe
+                        a.target = 'pdf-viewer-frame';
                         li.appendChild(a);
                     } else {
-                        // This is a folder/directory
-                        li.textContent = key;
-                        li.classList.add('folder');
-                        li.addEventListener('click', function(e) {
-                            e.stopPropagation(); // Prevent parent folders from toggling
+                        const folderSpan = document.createElement('span');
+                        folderSpan.textContent = key;
+                        folderSpan.classList.add('folder');
+                        
+                        li.appendChild(folderSpan);
+
+                        folderSpan.addEventListener('click', function(e) {
+                            e.stopPropagation();
                             this.classList.toggle('open');
-                            const nestedUl = this.querySelector('.nested');
+                            const nestedUl = this.nextElementSibling;
                             if (nestedUl) {
                                 nestedUl.classList.toggle('active');
                             }
