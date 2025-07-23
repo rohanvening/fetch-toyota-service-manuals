@@ -20,14 +20,14 @@ export interface Manual {
   raw: string;
 }
 
-// Add 'mode' to the CLI arguments interface
-// Note: You may need to update 'processCLIArgs.ts' to support this new argument
 interface ExtendedCLIArgs extends CLIArgs {
     mode?: "fresh" | "resume" | "overwrite";
 }
 
 async function run(args: ExtendedCLIArgs) {
-  const { manual, cookieString, mode = "resume" } = args; // Default to resume mode
+  // Read the cookie string from the environment variable
+  const cookieString = process.env.TIS_COOKIE_STRING;
+  const { manual, mode = "resume" } = args;
   const genericManuals: Manual[] = [];
   const rawManualIds = new Set(manual.map((m) => m.toUpperCase().trim()));
 
@@ -59,25 +59,19 @@ async function run(args: ExtendedCLIArgs) {
     genericManuals.map((m) => [m.id, resolve(join(".", "manuals", m.raw))])
   );
 
-  // =================================================================
-  // NEW: Handle download modes
-  // =================================================================
   if (mode === 'fresh') {
       console.log("Mode: Fresh Download. Creating versioned folders...");
-      const datePrefix = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      const datePrefix = new Date().toISOString().split('T')[0];
       
       const versionedDirPaths: { [manualId: string]: string } = {};
       for (const m of genericManuals) {
           let versionedPath = resolve(join(".", "manuals", `${datePrefix}_${m.raw}`));
-          
           let counter = 1;
           while (true) {
               try {
                   await stat(versionedPath);
                   versionedPath = resolve(join(".", "manuals", `${datePrefix}_${m.raw}_(${++counter})`));
-              } catch (e) {
-                  break;
-              }
+              } catch (e) { break; }
           }
           versionedDirPaths[m.id] = versionedPath;
       }
@@ -113,7 +107,7 @@ async function run(args: ExtendedCLIArgs) {
   let transformedCookies: Cookie[] = [];
 
   if (cookieString) {
-    console.log("Using cookies from command line...");
+    console.log("Using cookies from environment variable...");
     const cookieStrings = cookieString.split(';').map(c => c.trim());
     
     transformedCookies = cookieStrings.map((c) => {
@@ -131,7 +125,7 @@ async function run(args: ExtendedCLIArgs) {
     });
 
   } else {
-    console.log("No cookie string provided. Please use the --cookie-string argument.");
+    console.log("No cookie string provided via environment variable. Aborting.");
     process.exit(1);
   }
 
@@ -161,7 +155,6 @@ async function run(args: ExtendedCLIArgs) {
   console.log("Beginning manual downloads...");
   for (const manual of genericManuals) {
     console.log(`Downloading ${manual.raw}... (type = generic)`);
-    // Pass the mode to the downloader function
     await downloadGenericManual(page, manual, dirPaths[manual.id], mode);
   }
 
