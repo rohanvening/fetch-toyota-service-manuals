@@ -47,8 +47,6 @@ export default async function downloadGenericManual(
   console.log("  - Downloading all PDF files...");
   const stats = await recursivelyDownloadManual(page, path, files, mode);
   
-  process.stdout.write("\r" + " ".repeat(120) + "\r");
-  
   return stats;
 }
 
@@ -66,17 +64,12 @@ async function recursivelyDownloadManual(
       const filePath = `${join(path, sanitizedName)}.pdf`;
       
       const progress = `[${(index + 1).toString().padStart(3, ' ')}/${entries.length}]`;
-      let progressMessage = `    ${progress} Processing: ${sanitizedName}...`;
       
-      if (progressMessage.length > 120) {
-        progressMessage = progressMessage.substring(0, 117) + "...";
-      }
-      
-      process.stdout.write(`\r${progressMessage.padEnd(120, ' ')}`);
-
       if (mode === 'resume') {
           try {
               await stat(filePath);
+              // Use console.log for line-by-line output
+              console.log(`\x1b[33m${progress} ⏩ Skipping existing file: ${sanitizedName}.pdf\x1b[0m`); // Yellow for skipped
               stats.skipped++;
               continue;
           } catch (e) {
@@ -84,6 +77,7 @@ async function recursivelyDownloadManual(
           }
       }
 
+      console.log(`${progress} Processing: ${sanitizedName}...`);
       const htmlUrl = `https://techinfo.toyota.com${value}`;
 
       try {
@@ -95,35 +89,26 @@ async function recursivelyDownloadManual(
           throw new Error(`Page did not redirect to a PDF. Final URL: ${finalUrl}`);
         }
         
-        // =================================================================
-        // FIX: Use the authenticated browser to download the PDF content
-        // =================================================================
         const pdfResponse = await page.goto(finalUrl);
         if (!pdfResponse) {
             throw new Error("Failed to get a response for the PDF file.");
         }
-        // Get the raw PDF data as a buffer
         const pdfBuffer = await pdfResponse.body();
         
-        // Save the buffer to a file
         await writeFile(filePath, pdfBuffer);
 
-        // Get file stats to report the size
         const fileStats = await stat(filePath);
         const fileSizeInKB = Math.round(fileStats.size / 1024);
         
-        // Update the progress line to show the final size
-        const finalMessage = `    ${progress} Downloaded: ${sanitizedName}.pdf (${fileSizeInKB} KB)`;
-        // Truncate if necessary
-        const truncatedMessage = finalMessage.length > 120 ? finalMessage.substring(0, 117) + "..." : finalMessage;
-        process.stdout.write(`\r${truncatedMessage.padEnd(120, ' ')}`);
+        // Green for success
+        console.log(`\x1b[32m${progress} ✅ Successfully saved ${sanitizedName}.pdf (${fileSizeInKB} KB)\x1b[0m`);
 
         stats.downloaded++;
 
       } catch (e) {
         stats.failed++;
-        process.stdout.write("\r" + " ".repeat(120) + "\r");
-        console.error(`\n    ❌ Error processing page ${name}: ${(e as Error).message}`);
+        // Red for failure
+        console.error(`\x1b[31m${progress} ❌ Error processing page ${name}: ${(e as Error).message}\x1b[0m`);
         continue;
       }
     } else {
