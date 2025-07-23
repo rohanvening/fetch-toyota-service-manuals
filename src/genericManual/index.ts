@@ -66,11 +66,15 @@ async function recursivelyDownloadManual(
       
       if (mode === 'resume') {
           try {
-              await stat(filePath);
-              // Use console.log for line-by-line output
-              console.log(`\x1b[33m${progress} ⏩ Skipping existing file: ${sanitizedName}.pdf\x1b[0m`); // Yellow for skipped
-              stats.skipped++;
-              continue;
+              const fileStats = await stat(filePath);
+              // =================================================================
+              // FIX: Only skip if the file is a reasonable size (e.g., > 15KB)
+              // =================================================================
+              if (fileStats.size > 15 * 1024) {
+                console.log(`\x1b[33m${progress} ⏩ Skipping existing file: ${sanitizedName}.pdf\x1b[0m`); // Yellow for skipped
+                stats.skipped++;
+                continue;
+              }
           } catch (e) {
               // File does not exist, so proceed with download.
           }
@@ -88,9 +92,6 @@ async function recursivelyDownloadManual(
           throw new Error(`Page did not redirect to a PDF. Final URL: ${finalUrl}`);
         }
         
-        // =================================================================
-        // FIX: Revert to using the authenticated axios client for the download
-        // =================================================================
         const pdfStreamResponse = await client.get(finalUrl, {
             responseType: 'stream',
         });
@@ -100,6 +101,15 @@ async function recursivelyDownloadManual(
         const fileStats = await stat(filePath);
         const fileSizeInKB = Math.round(fileStats.size / 1024);
         
+        // =================================================================
+        // FIX: Check for 0KB files and mark them as a failure
+        // =================================================================
+        if (fileStats.size === 0) {
+            stats.failed++;
+            console.error(`\x1b[31m${progress} ❌ Error processing page ${name}: Downloaded file is empty (0 KB).\x1b[0m`);
+            continue;
+        }
+
         // Green for success
         console.log(`\x1b[32m${progress} ✅ Successfully saved ${sanitizedName}.pdf (${fileSizeInKB} KB)\x1b[0m`);
 
