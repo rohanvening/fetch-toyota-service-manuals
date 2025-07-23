@@ -14,10 +14,15 @@ export default async function downloadGenericManual(
   mode: "fresh" | "resume" | "overwrite",
   cookieString: string | undefined // Accept the cookie string
 ) {
+  // FIX: Add a check to ensure the cookieString is not undefined.
+  if (!cookieString) {
+    throw new Error("Cannot download table of contents: Cookie string is missing.");
+  }
+
   let tocReq: AxiosResponse;
   try {
     console.log("Downloading table of contents...");
-    // FIX: Add the cookie header directly to the axios request
+    // Add the cookie header directly to the axios request
     tocReq = await client({
       method: "GET",
       url: `${manualData.type}/${manualData.id}/toc.xml`,
