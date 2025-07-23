@@ -11,15 +11,20 @@ export default async function downloadGenericManual(
   page: Page,
   manualData: Manual,
   path: string,
-  mode: "fresh" | "resume" | "overwrite"
+  mode: "fresh" | "resume" | "overwrite",
+  cookieString: string | undefined // Accept the cookie string
 ) {
   let tocReq: AxiosResponse;
   try {
     console.log("Downloading table of contents...");
+    // FIX: Add the cookie header directly to the axios request
     tocReq = await client({
       method: "GET",
       url: `${manualData.type}/${manualData.id}/toc.xml`,
       responseType: "text",
+      headers: {
+        Cookie: cookieString,
+      },
     });
   } catch (e: any) {
     if (e.response && e.response.status === 404) {
@@ -46,15 +51,11 @@ async function recursivelyDownloadManual(
       const sanitizedName = name.replace(/\//g, "-");
       const filePath = `${join(path, sanitizedName)}.pdf`;
       
-      // =================================================================
-      // NEW: Handle 'resume' mode by checking if the file exists
-      // =================================================================
       if (mode === 'resume') {
           try {
               await stat(filePath);
-              // If stat() doesn't throw, the file exists.
               console.log(`Skipping existing file: ${sanitizedName}.pdf`);
-              continue; // Skip to the next item in the loop
+              continue;
           } catch (e) {
               // File does not exist, so proceed with download.
           }
