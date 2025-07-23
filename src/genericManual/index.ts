@@ -1,118 +1,137 @@
-import { AxiosResponse } from "axios";
-import { client } from "../api/client";
-import { mkdir, writeFile, stat } from "fs/promises";
-import { join } from "path";
-import parseToC, { ParsedToC } from "./parseToC";
-import { Page } from "playwright";
-import { Manual } from "..";
-import saveStream from "../api/saveStream";
+// Use the 'stealth' version of playwright
+import { chromium } from "playwright-extra";
+import stealthPlugin from "playwright-extra-plugin-stealth";
 
-export default async function downloadGenericManual(
-  page: Page,
-  manualData: Manual,
-  path: string
-) {
-  // Download and parse the Table of Contents XML
-  let tocReq: AxiosResponse;
-  try {
-    console.log("Downloading table of contents...");
-    tocReq = await client({
-      method: "GET",
-      url: `${manualData.type}/${manualData.id}/toc.xml`,
-      responseType: "text",
-    });
-  } catch (e: any) {
-    if (e.response && e.response.status === 404) {
-      throw new Error(`Manual ${manualData.id} doesn't exist.`);
-    }
-    throw new Error(`Unknown error getting table of contents: ${e}`);
-  }
+import processCLIArgs, { CLIArgs } from "./processCLIArgs";
+import login from "./api/login";
+import { join, resolve } from "path";
+import { mkdir, readFile, writeFile } from "fs/promises";
+import downloadGenericManual from "./genericManual";
+import { Cookie } from "playwright";
+import { jar } from "./api/client";
+import dayjs from "dayjs";
 
-  const files = parseToC(tocReq.data, manualData.year);
+// Add the stealth plugin to chromium
+chromium.use(stealthPlugin());
 
-  // Save the parsed table of contents to disk
-  console.log("Saving table of contents...");
-  await writeFile(join(path, "toc.json"), JSON.stringify(files, null, 2));
-
-  console.log("Downloading full manual...");
-  await recursivelyDownloadManual(page, path, files);
+export interface Manual {
+  type: "em" | "rm" | "bm";
+  id: string;
+  year?: number;
+  raw: string;
 }
 
-async function recursivelyDownloadManual(
-  page: Page,
-  path: string,
-  toc: ParsedToC
-) {
-  for (const [name, value] of Object.entries(toc)) {
-    if (typeof value === "string") {
-      const sanitizedName = name.replace(/\//g, "-");
-      const filePath = `${join(path, sanitizedName)}.pdf`;
-      const htmlUrl = `https://techinfo.toyota.com${value}`;
-      
-      console.log(`Processing page ${sanitizedName}...`);
+async function run({ manual, email, password, headed, cookieString }: CLIArgs) {
+  // sort manuals and make sure that they're valid (ish)
+  const genericManuals: Manual[] = [];
 
-      try {
-        // =================================================================
-        // FINAL CORRECTED LOGIC: Trust, but Verify
-        // =================================================================
-        console.log(`   --> Navigating to ${htmlUrl}`);
-        
-        // Step 1: Navigate to the page. Let Playwright handle the redirect.
-        // The default 'load' should wait for the final destination.
-        await page.goto(htmlUrl, { timeout: 60000 });
-        
-        // Step 2: After navigation, get the final URL.
-        const finalUrl = page.url();
-        console.log(`   --> Navigation complete. Final URL is: ${finalUrl}`);
+  const rawManualIds = new Set(manual.map((m) => m.toUpperCase().trim()));
 
-        // Step 3: Check if the final URL is a PDF.
-        if (!finalUrl.endsWith('.pdf')) {
-          throw new Error(`Page did not redirect to a PDF. Final URL: ${finalUrl}`);
-        }
-        
-        console.log(`   --> Downloading and saving to ${filePath}`);
+  console.log("Parsing manual IDs...");
+  rawManualIds.forEach((m) => {
+    const id = m.includes("@") ? m.split("@")[0] : m;
+    const year = m.includes("@") ? parseInt(m.split("@")[1]) : undefined;
 
-        // Step 4: Download the captured URL.
-        const pdfStreamResponse = await client.get(finalUrl, {
-            responseType: 'stream',
+    switch (m.slice(0, 2).toUpperCase()) {
+      case "EM":
+      case "RM":
+      case "BM":
+        genericManuals.push({
+          type: m.slice(0, 2).toLowerCase() as "em" | "rm" | "bm",
+          id,
+          year,
+          raw: m,
         });
-
-        await saveStream(pdfStreamResponse.data, filePath);
-
-        const fileStats = await stat(filePath);
-        const fileSizeInKB = Math.round(fileStats.size / 1024);
-        console.log(`   --> Successfully saved ${sanitizedName}.pdf (${fileSizeInKB} KB)`);
-        
-        await page.waitForTimeout(1000);
-
-      } catch (e) {
-        const error = e as Error;
-        console.error(`Error processing page ${name}: ${error.message}`);
-        
-        // Add screenshot on failure for better debugging
-        const screenshotPath = `error-${sanitizedName.substring(0, 50)}-${Date.now()}.png`;
-        try {
-            await page.screenshot({ path: screenshotPath, fullPage: true });
-            console.log(`Screenshot saved to ${screenshotPath}. Continuing...`);
-        } catch (screenshotError) {
-            console.error("Failed to take screenshot.", screenshotError);
-        }
-        
-        continue;
-      }
-
-      continue;
+        return;
+      default:
+        console.error(
+          `Invalid manual ${m}: manual IDs must start with EM, RM, or BM.`
+        );
+        process.exit(1);
     }
+  });
 
-    const newPath = join(path, name.replace(/\//g, "-"));
+  const dirPaths: { [manualId: string]: string } = Object.fromEntries(
+    genericManuals.map((m) => [m.id, resolve(join(".", "manuals", m.raw))])
+  );
+
+  await Promise.all(
+    Object.values(dirPaths).map((m) => mkdir(m, { recursive: true }))
+  );
+
+  console.log("Setting up STEALTH Playwright...");
+  const browser = await chromium.launch({
+    // Forcing headed mode is a key part of the stealth strategy
+    headless: false,
+    // Add arguments to further mask automation
+    args: [
+        '--disable-blink-features=AutomationControlled',
+        '--no-sandbox',
+        '--disable-setuid-sandbox'
+    ]
+  });
+
+  let transformedCookies: Cookie[] = [];
+
+  if (cookieString) {
+    console.log("Using cookies from command line...");
+    const cookieStrings = cookieString.split("; ");
+    transformedCookies = cookieStrings.map((c) => {
+      const [name, value] = c.split("=");
+      return {
+        name, value,
+        domain: ".toyota.com", // Use a broader domain
+        path: "/",
+        expires: dayjs().add(1, "day").unix(),
+        httpOnly: false,
+        secure: true,
+        sameSite: "None",
+      };
+    });
+  } else if (email && password) {
+    // This login method is likely insufficient, but we leave it as a fallback
+    console.log("Logging into TIS using email and password...");
     try {
-      await mkdir(newPath, { recursive: true });
-    } catch (e) {
-      if ((e as any).code !== "EEXIST") {
-        console.log(`Could not create directory ${newPath}. Skipping section.`);
-        continue;
-      }
+      await login(email, password);
+    } catch (e: any) {
+      console.log("Error logging in.", e.toString());
+      return;
     }
-    await recursivelyDownloadManual(page, newPath, value);
+    transformedCookies = jar.toJSON().cookies.map((c: any) => ({
+      name: c.key, value: c.value,
+      domain: c.domain || ".toyota.com",
+      path: c.path || "/",
+      expires: dayjs().add(1, "day").unix(),
+      httpOnly: c.httpOnly || false,
+      secure: c.secure || false,
+      sameSite: "Lax",
+    }));
+  } else {
+    console.log("No credentials provided. Please provide a cookie string.");
+    process.exit(1);
   }
+
+  const context = await browser.newContext({
+    storageState: { cookies: transformedCookies, origins: [] },
+    viewport: { width: 1920, height: 1080 }, // Use a standard viewport
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
+  });
+
+  const page = await context.newPage();
+
+  console.log("Checking that Playwright is logged in...");
+  await page.goto("https://techinfo.toyota.com/t3Portal/");
+
+  console.log("Beginning manual downloads...");
+  for (const manual of genericManuals) {
+    console.log(`Downloading ${manual.raw}... (type = generic)`);
+    await downloadGenericManual(page, manual, dirPaths[manual.id]);
+  }
+
+  console.log("All manuals downloaded!");
+  await browser.close();
+  process.exit(0);
 }
+
+const args = processCLIArgs();
+run(args);
