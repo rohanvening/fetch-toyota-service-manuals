@@ -80,7 +80,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --mode)
-      MODE="$2"
+      NODE_ARGS+=(--mode "$2") # Pass mode directly to node
       shift 2
       ;;
     # FIX: Recognize and ignore old, unsupported arguments
@@ -116,7 +116,8 @@ if [ -z "$COOKIE_STRING" ]; then
 fi
 
 # If mode is missing, prompt for it
-if [ -z "$MODE" ]; then
+# We check if --mode was passed in NODE_ARGS
+if ! [[ " ${NODE_ARGS[@]} " =~ " --mode " ]]; then
     echo ""
     echo "--- Please select a download mode ---"
     echo "1. Fresh:    Create a new, versioned folder for the download."
@@ -125,9 +126,9 @@ if [ -z "$MODE" ]; then
     echo "---------------------------------------"
     read -p "Enter your choice (1, 2, or 3): " MODE_CHOICE
     case $MODE_CHOICE in
-        1) MODE="fresh" ;;
-        2) MODE="resume" ;;
-        3) MODE="overwrite" ;;
+        1) NODE_ARGS+=(--mode "fresh") ;;
+        2) NODE_ARGS+=(--mode "resume") ;;
+        3) NODE_ARGS+=(--mode "overwrite") ;;
         *) echo "Invalid choice. Aborting."; exit 1 ;;
     esac
 fi
@@ -136,7 +137,6 @@ fi
 # Pre-flight Dependency Checks
 # =================================================================
 echo "--- Running Pre-flight Dependency Checks ---"
-# ... (pre-flight checks remain the same) ...
 if ! command -v xvfb-run &> /dev/null; then
     echo "⚠️ xvfb-run not found. Installing xvfb..."
     apt-get update && apt-get install -y xvfb
@@ -154,22 +154,9 @@ echo "--- All Checks Passed. Starting Application ---"
 echo ""
 
 # =================================================================
-# FIX: Robustly build and pass arguments to the Node.js script
+# FIX: Export the cookie string as an environment variable
 # =================================================================
-# Start with the arguments that are not --cookie-string or --mode
-FINAL_ARGS=("${NODE_ARGS[@]}")
+export TIS_COOKIE_STRING="$COOKIE_STRING"
 
-# Safely add the cookie string and mode to the final arguments array
-FINAL_ARGS+=(--cookie-string "$COOKIE_STRING")
-FINAL_ARGS+=(--mode "$MODE")
-
-# =================================================================
-# DIAGNOSTIC: Print the final command before executing it
-# =================================================================
-echo "Executing command:"
-echo "xvfb-run --auto-servernum npx ts-node src/index.ts ${FINAL_ARGS[*]}"
-echo "----------------------------------------------------"
-
-# Execute the main Node.js script, passing the array of arguments
-# The "${FINAL_ARGS[@]}" syntax ensures that arguments with spaces are handled correctly.
-xvfb-run --auto-servernum npx ts-node src/index.ts "${FINAL_ARGS[@]}"
+# Execute the main Node.js script, passing the cleaned arguments
+xvfb-run --auto-servernum npx ts-node src/index.ts "${NODE_ARGS[@]}"
