@@ -91,19 +91,25 @@ async function recursivelyDownloadManual(
         }
         
         // =================================================================
-        // NEW STRATEGY: Use the browser's native download functionality
+        // NEW STRATEGY: Use the browser's fetch API to get the raw PDF data
         // =================================================================
-        // 1. Start waiting for the download event BEFORE navigating
-        const downloadPromise = page.waitForEvent('download');
-        
-        // 2. Navigate to the final PDF URL, which will trigger the download
-        await page.goto(finalUrl);
-        
-        // 3. Wait for the download event to complete
-        const download = await downloadPromise;
+        // This runs JavaScript inside the authenticated browser context
+        const pdfArrayBuffer = await page.evaluate(async (url) => {
+            const response = await fetch(url);
+            const buffer = await response.arrayBuffer();
+            // We need to convert the ArrayBuffer to a plain array of numbers to send it back to Node.js
+            return Array.from(new Uint8Array(buffer));
+        }, finalUrl);
 
-        // 4. Save the downloaded file to the specified path
-        await download.saveAs(filePath);
+        if (!pdfArrayBuffer || pdfArrayBuffer.length === 0) {
+            throw new Error("Downloaded PDF buffer was empty.");
+        }
+
+        // Convert the array of numbers back into a Node.js Buffer
+        const pdfBuffer = Buffer.from(pdfArrayBuffer);
+        
+        // Save the buffer to a file
+        await writeFile(filePath, pdfBuffer);
 
         const fileStats = await stat(filePath);
         const fileSizeInKB = Math.round(fileStats.size / 1024);
