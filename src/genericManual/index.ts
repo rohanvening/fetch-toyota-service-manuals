@@ -35,10 +35,8 @@ export default async function downloadGenericManual(
     tocContent = await response.text();
 
   } catch (e: any) {
-    if (e.response && e.response.status === 404) {
-      throw new Error(`Manual ${manualData.id} doesn't exist.`);
-    }
-    throw new Error(`Unknown error getting table of contents: ${e}`);
+    // This catch block is now more generic since we're not using axios here
+    throw new Error(`Unknown error getting table of contents: ${e.message}`);
   }
 
   let files: ParsedToC;
