@@ -67,9 +67,7 @@ async function recursivelyDownloadManual(
       if (mode === 'resume') {
           try {
               const fileStats = await stat(filePath);
-              // =================================================================
-              // FIX: Only skip if the file is a reasonable size (e.g., > 15KB)
-              // =================================================================
+              // Only skip if the file is a reasonable size (e.g., > 15KB)
               if (fileStats.size > 15 * 1024) {
                 console.log(`\x1b[33m${progress} ⏩ Skipping existing file: ${sanitizedName}.pdf\x1b[0m`); // Yellow for skipped
                 stats.skipped++;
@@ -92,21 +90,25 @@ async function recursivelyDownloadManual(
           throw new Error(`Page did not redirect to a PDF. Final URL: ${finalUrl}`);
         }
         
-        const pdfStreamResponse = await client.get(finalUrl, {
-            responseType: 'stream',
-        });
-
-        await saveStream(pdfStreamResponse.data, filePath);
+        // =================================================================
+        // FIX: Use the authenticated browser to download the PDF content
+        // =================================================================
+        const pdfResponse = await page.goto(finalUrl);
+        if (!pdfResponse) {
+            throw new Error("Failed to get a response for the PDF file.");
+        }
+        // Get the raw PDF data as a buffer
+        const pdfBuffer = await pdfResponse.body();
+        
+        // Save the buffer to a file
+        await writeFile(filePath, pdfBuffer);
 
         const fileStats = await stat(filePath);
         const fileSizeInKB = Math.round(fileStats.size / 1024);
         
-        // =================================================================
-        // FIX: Check for 0KB files and mark them as a failure
-        // =================================================================
-        if (fileStats.size === 0) {
+        if (fileStats.size < 1024) { // Check if file is less than 1KB
             stats.failed++;
-            console.error(`\x1b[31m${progress} ❌ Error processing page ${name}: Downloaded file is empty (0 KB).\x1b[0m`);
+            console.error(`\x1b[31m${progress} ❌ Error processing page ${name}: Downloaded file is suspiciously small (${fileSizeInKB} KB).\x1b[0m`);
             continue;
         }
 
