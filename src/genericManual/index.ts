@@ -1,13 +1,14 @@
 import { AxiosResponse } from "axios";
 import { client } from "../api/client";
+// Import 'writeFile' from the 'fs/promises' module
 import { mkdir, writeFile, stat } from "fs/promises";
 import { join } from "path";
 import parseToC, { ParsedToC } from "./parseToC";
 import { Page } from "playwright";
 import { Manual } from "..";
+// saveStream is no longer needed here, but we'll leave the import in case other parts use it
 import saveStream from "../api/saveStream";
 
-// NEW: Define a type for our download statistics
 export interface DownloadStats {
   downloaded: number;
   skipped: number;
@@ -19,7 +20,7 @@ export default async function downloadGenericManual(
   manualData: Manual,
   path: string,
   mode: "fresh" | "resume" | "overwrite"
-): Promise<DownloadStats> { // Return the stats
+): Promise<DownloadStats> {
   let tocReq: AxiosResponse;
   try {
     console.log("  - Downloading table of contents...");
@@ -46,8 +47,7 @@ export default async function downloadGenericManual(
   console.log("  - Downloading all PDF files...");
   const stats = await recursivelyDownloadManual(page, path, files, mode);
   
-  // Clear the final progress line
-  process.stdout.write("\r" + " ".repeat(100) + "\r");
+  process.stdout.write("\r" + " ".repeat(120) + "\r");
   
   return stats;
 }
@@ -57,7 +57,7 @@ async function recursivelyDownloadManual(
   path: string,
   toc: ParsedToC,
   mode: "fresh" | "resume" | "overwrite",
-  stats: DownloadStats = { downloaded: 0, skipped: 0, failed: 0 } // Initialize stats
+  stats: DownloadStats = { downloaded: 0, skipped: 0, failed: 0 }
 ): Promise<DownloadStats> {
   const entries = Object.entries(toc);
   for (const [index, [name, value]] of entries.entries()) {
@@ -65,11 +65,14 @@ async function recursivelyDownloadManual(
       const sanitizedName = name.replace(/\//g, "-");
       const filePath = `${join(path, sanitizedName)}.pdf`;
       
-      // =================================================================
-      // NEW: Dynamic logging with process.stdout.write and carriage return
-      // =================================================================
       const progress = `[${(index + 1).toString().padStart(3, ' ')}/${entries.length}]`;
-      process.stdout.write(`\r    ${progress} Processing: ${sanitizedName}...`);
+      let progressMessage = `    ${progress} Processing: ${sanitizedName}...`;
+      
+      if (progressMessage.length > 120) {
+        progressMessage = progressMessage.substring(0, 117) + "...";
+      }
+      
+      process.stdout.write(`\r${progressMessage.padEnd(120, ' ')}`);
 
       if (mode === 'resume') {
           try {
@@ -84,6 +87,7 @@ async function recursivelyDownloadManual(
       const htmlUrl = `https://techinfo.toyota.com${value}`;
 
       try {
+        // First navigation to get the final PDF URL
         await page.goto(htmlUrl, { timeout: 60000 });
         const finalUrl = page.url();
 
@@ -91,17 +95,24 @@ async function recursivelyDownloadManual(
           throw new Error(`Page did not redirect to a PDF. Final URL: ${finalUrl}`);
         }
         
-        const pdfStreamResponse = await client.get(finalUrl, {
-            responseType: 'stream',
-        });
+        // =================================================================
+        // FIX: Use the authenticated browser to download the PDF content
+        // =================================================================
+        const pdfResponse = await page.goto(finalUrl);
+        if (!pdfResponse) {
+            throw new Error("Failed to get a response for the PDF file.");
+        }
+        // Get the raw PDF data as a buffer
+        const pdfBuffer = await pdfResponse.body();
+        
+        // Save the buffer to a file
+        await writeFile(filePath, pdfBuffer);
 
-        await saveStream(pdfStreamResponse.data, filePath);
         stats.downloaded++;
 
       } catch (e) {
         stats.failed++;
-        // Clear the line and log the error on its own line
-        process.stdout.write("\r" + " ".repeat(100) + "\r");
+        process.stdout.write("\r" + " ".repeat(120) + "\r");
         console.error(`\n    ❌ Error processing page ${name}: ${(e as Error).message}`);
         continue;
       }
