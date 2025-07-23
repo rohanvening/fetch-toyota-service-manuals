@@ -1,5 +1,9 @@
+// =================================================================
+// Forcefully disable SSL certificate verification for this process
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+// =================================================================
+
 // Use the 'stealth' version of playwright.
-// The 'stealth' capabilities are automatically applied by importing from 'playwright-extra'.
 import { chromium } from "playwright-extra";
 
 import processCLIArgs, { CLIArgs } from "./processCLIArgs";
