@@ -22,7 +22,7 @@ export default async function downloadGenericManual(
   try {
     console.log("Downloading table of contents...");
     // =================================================================
-    // FIX: Use a direct, clean axios call to bypass cookie jar issues
+    // FIX: Use a direct axios call with a full set of browser headers
     // =================================================================
     tocReq = await axios.get(
       `https://techinfo.toyota.com/t3Portal/external/en/${manualData.type}/${manualData.id}/toc.xml`,
@@ -31,6 +31,10 @@ export default async function downloadGenericManual(
         headers: {
           Cookie: cookieString,
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+          "Accept-Language": "en-US,en;q=0.9",
+          "Connection": "keep-alive",
+          "Referer": "https://techinfo.toyota.com/",
         },
       }
     );
@@ -80,6 +84,7 @@ async function recursivelyDownloadManual(
           throw new Error(`Page did not redirect to a PDF. Final URL: ${finalUrl}`);
         }
         
+        // Use the shared client for PDF downloads as it has the cookie jar populated
         const pdfStreamResponse = await client.get(finalUrl, {
             responseType: 'stream',
         });
