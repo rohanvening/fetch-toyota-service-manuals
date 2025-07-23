@@ -3,12 +3,12 @@
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 // =================================================================
 
-import { chromium, Browser } from "playwright-extra";
+import { chromium } from "playwright-extra";
+import { Browser, Cookie } from "playwright"; // Correctly import Browser type
 import processCLIArgs, { CLIArgs } from "./processCLIArgs";
 import { join, resolve } from "path";
 import { mkdir, readFile, writeFile, stat } from "fs/promises";
 import downloadGenericManual, { DownloadStats } from "./genericManual";
-import { Cookie } from "playwright";
 import { jar } from "./api/client";
 import dayjs from "dayjs";
 
@@ -93,7 +93,7 @@ async function run(args: ExtendedCLIArgs) {
   }
 
   console.log("Setting up STEALTH Playwright...");
-  const browser = await chromium.launch({
+  const browser: Browser = await chromium.launch({
     headless: false,
     args: [
         '--disable-blink-features=AutomationControlled',
