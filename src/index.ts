@@ -85,6 +85,16 @@ async function run({ manual, email, password, headed, cookieString }: CLIArgs) {
         sameSite: "None",
       };
     });
+
+    // =================================================================
+    // FIX: Also add these cookies to the axios client's cookie jar
+    // =================================================================
+    console.log("Populating axios cookie jar...");
+    cookieStrings.forEach(cookie => {
+        // We need to trim whitespace from the cookie string
+        jar.setCookieSync(cookie.trim(), 'https://techinfo.toyota.com');
+    });
+
   } else {
     console.log("No cookie string provided. Please use the --cookie-string argument.");
     process.exit(1);
