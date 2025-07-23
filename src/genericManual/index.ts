@@ -91,13 +91,19 @@ async function recursivelyDownloadManual(
         }
         
         // =================================================================
-        // FIX: Revert to using the authenticated axios client for the download
+        // NEW STRATEGY: Use the browser's native download functionality
         // =================================================================
-        const pdfStreamResponse = await client.get(finalUrl, {
-            responseType: 'stream',
-        });
+        // 1. Start waiting for the download event BEFORE navigating
+        const downloadPromise = page.waitForEvent('download');
+        
+        // 2. Navigate to the final PDF URL, which will trigger the download
+        await page.goto(finalUrl);
+        
+        // 3. Wait for the download event to complete
+        const download = await downloadPromise;
 
-        await saveStream(pdfStreamResponse.data, filePath);
+        // 4. Save the downloaded file to the specified path
+        await download.saveAs(filePath);
 
         const fileStats = await stat(filePath);
         const fileSizeInKB = Math.round(fileStats.size / 1024);
