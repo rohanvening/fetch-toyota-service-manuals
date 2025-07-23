@@ -10,7 +10,8 @@ import saveStream from "../api/saveStream";
 export default async function downloadGenericManual(
   page: Page,
   manualData: Manual,
-  path: string
+  path: string,
+  mode: "fresh" | "resume" | "overwrite"
 ) {
   let tocReq: AxiosResponse;
   try {
@@ -31,37 +32,45 @@ export default async function downloadGenericManual(
   await writeFile(join(path, "toc.json"), JSON.stringify(files, null, 2));
 
   console.log("Downloading full manual...");
-  await recursivelyDownloadManual(page, path, files);
+  await recursivelyDownloadManual(page, path, files, mode);
 }
 
 async function recursivelyDownloadManual(
   page: Page,
   path: string,
-  toc: ParsedToC
+  toc: ParsedToC,
+  mode: "fresh" | "resume" | "overwrite"
 ) {
   for (const [name, value] of Object.entries(toc)) {
     if (typeof value === "string") {
       const sanitizedName = name.replace(/\//g, "-");
       const filePath = `${join(path, sanitizedName)}.pdf`;
-      const htmlUrl = `https://techinfo.toyota.com${value}`;
       
+      // =================================================================
+      // NEW: Handle 'resume' mode by checking if the file exists
+      // =================================================================
+      if (mode === 'resume') {
+          try {
+              await stat(filePath);
+              // If stat() doesn't throw, the file exists.
+              console.log(`Skipping existing file: ${sanitizedName}.pdf`);
+              continue; // Skip to the next item in the loop
+          } catch (e) {
+              // File does not exist, so proceed with download.
+          }
+      }
+
+      const htmlUrl = `https://techinfo.toyota.com${value}`;
       console.log(`Processing page ${sanitizedName}...`);
 
       try {
-        console.log(`   --> Navigating to ${htmlUrl}`);
         await page.goto(htmlUrl, { timeout: 60000 });
-        
         const finalUrl = page.url();
-        console.log(`   --> Navigation complete. Final URL is: ${finalUrl}`);
 
-        // =================================================================
-        // FIX: Change '.endsWith' to '.includes' to handle query parameters
-        // =================================================================
         if (!finalUrl.includes('.pdf')) {
           throw new Error(`Page did not redirect to a PDF. Final URL: ${finalUrl}`);
         }
         
-        console.log(`   --> Downloading and saving to ${filePath}`);
         const pdfStreamResponse = await client.get(finalUrl, {
             responseType: 'stream',
         });
@@ -77,15 +86,6 @@ async function recursivelyDownloadManual(
       } catch (e) {
         const error = e as Error;
         console.error(`Error processing page ${name}: ${error.message}`);
-        
-        const screenshotPath = `error-${sanitizedName.substring(0, 50)}-${Date.now()}.png`;
-        try {
-            await page.screenshot({ path: screenshotPath, fullPage: true });
-            console.log(`Screenshot saved to ${screenshotPath}. Continuing...`);
-        } catch (screenshotError) {
-            console.error("Failed to take screenshot.", screenshotError);
-        }
-        
         continue;
       }
       continue;
@@ -100,6 +100,6 @@ async function recursivelyDownloadManual(
         continue;
       }
     }
-    await recursivelyDownloadManual(page, newPath, value);
+    await recursivelyDownloadManual(page, newPath, value, mode);
   }
 }
