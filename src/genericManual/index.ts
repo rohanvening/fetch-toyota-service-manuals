@@ -1,4 +1,4 @@
-import { AxiosResponse } from "axios";
+import axios, { AxiosResponse } from "axios";
 import { client } from "../api/client";
 import { mkdir, writeFile, stat } from "fs/promises";
 import { join } from "path";
@@ -14,7 +14,6 @@ export default async function downloadGenericManual(
   mode: "fresh" | "resume" | "overwrite",
   cookieString: string | undefined // Accept the cookie string
 ) {
-  // FIX: Add a check to ensure the cookieString is not undefined.
   if (!cookieString) {
     throw new Error("Cannot download table of contents: Cookie string is missing.");
   }
@@ -22,15 +21,19 @@ export default async function downloadGenericManual(
   let tocReq: AxiosResponse;
   try {
     console.log("Downloading table of contents...");
-    // Add the cookie header directly to the axios request
-    tocReq = await client({
-      method: "GET",
-      url: `${manualData.type}/${manualData.id}/toc.xml`,
-      responseType: "text",
-      headers: {
-        Cookie: cookieString,
-      },
-    });
+    // =================================================================
+    // FIX: Use a direct, clean axios call to bypass cookie jar issues
+    // =================================================================
+    tocReq = await axios.get(
+      `https://techinfo.toyota.com/t3Portal/external/en/${manualData.type}/${manualData.id}/toc.xml`,
+      {
+        responseType: "text",
+        headers: {
+          Cookie: cookieString,
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
+        },
+      }
+    );
   } catch (e: any) {
     if (e.response && e.response.status === 404) {
       throw new Error(`Manual ${manualData.id} doesn't exist.`);
