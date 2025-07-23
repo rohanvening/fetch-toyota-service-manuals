@@ -29,7 +29,7 @@ if [ ! -d "node_modules" ]; then
 fi
 echo "✅ Base node modules are installed."
 
-# 3. Check for and install specific stealth plugins if missing from package.json
+# 3. Check for and install specific stealth plugins if missing
 missing_stealth=false
 if ! grep -q '"playwright-extra":' package.json; then
     missing_stealth=true
@@ -48,8 +48,20 @@ if [ "$missing_stealth" = true ]; then
 fi
 echo "✅ Stealth plugins are configured."
 
+# 4. Check for and create TypeScript declaration file for the stealth plugin
+# This fixes the "Could not find a declaration file" error.
+TYPE_DECLARATION_FILE="src/types.d.ts"
+if [ ! -f "$TYPE_DECLARATION_FILE" ]; then
+    echo "⚠️ TypeScript declaration file for stealth plugin not found. Creating it..."
+    # Create the src directory if it doesn't exist
+    mkdir -p src
+    # Create the declaration file with the required content
+    echo "declare module 'playwright-extra-plugin-stealth';" > "$TYPE_DECLARATION_FILE"
+fi
+echo "✅ TypeScript declarations are in place."
 
-# 4. Check for Playwright browsers
+
+# 5. Check for Playwright browsers
 if [ ! -d "node_modules/playwright-extra/.local-browsers" ]; then
     echo "⚠️ Playwright browsers not found. Running 'npx playwright install chromium'..."
     npx playwright install chromium
@@ -63,5 +75,5 @@ echo "✅ Playwright browsers are installed."
 echo "--- All Checks Passed. Starting Application ---"
 echo ""
 
-# CORRECTED: Execute the script using npx to ensure ts-node is found.
+# Execute the main Node.js script, passing along all command-line arguments
 npx ts-node src/index.ts "$@"
