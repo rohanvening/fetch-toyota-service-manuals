@@ -108,6 +108,16 @@ async function recursivelyDownloadManual(
         // Save the buffer to a file
         await writeFile(filePath, pdfBuffer);
 
+        // Get file stats to report the size
+        const fileStats = await stat(filePath);
+        const fileSizeInKB = Math.round(fileStats.size / 1024);
+        
+        // Update the progress line to show the final size
+        const finalMessage = `    ${progress} Downloaded: ${sanitizedName}.pdf (${fileSizeInKB} KB)`;
+        // Truncate if necessary
+        const truncatedMessage = finalMessage.length > 120 ? finalMessage.substring(0, 117) + "..." : finalMessage;
+        process.stdout.write(`\r${truncatedMessage.padEnd(120, ' ')}`);
+
         stats.downloaded++;
 
       } catch (e) {
