@@ -60,7 +60,6 @@ EOF
 # Argument Parsing
 # =================================================================
 COOKIE_STRING=""
-MODE=""
 # Use a temporary array to hold arguments for the node script
 NODE_ARGS=()
 
@@ -153,9 +152,7 @@ echo "✅ Base node modules are installed."
 echo "--- All Checks Passed. Starting Application ---"
 echo ""
 
-# =================================================================
-# FIX: Export the cookie string as an environment variable
-# =================================================================
+# Export the cookie string as an environment variable
 export TIS_COOKIE_STRING="$COOKIE_STRING"
 
 # Execute the main Node.js script, passing the cleaned arguments
