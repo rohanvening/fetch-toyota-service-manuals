@@ -176,11 +176,12 @@ async function run(args: ExtendedCLIArgs) {
   const totalStats: DownloadStats = { downloaded: 0, skipped: 0, failed: 0 };
 
   for (const manual of genericManuals) {
-    console.log(`\nDownloading ${manual.raw}...`);
-    const manualStats = await downloadGenericManual(page, manual, dirPaths[manual.id], mode);
-    totalStats.downloaded += manualStats.downloaded;
-    totalStats.skipped += manualStats.skipped;
-    totalStats.failed += manualStats.failed;
+  if (isShuttingDown) break; // Stop if shutdown requested
+  console.log(`\nDownloading ${manual.raw}...`);
+  const manualStats = await downloadGenericManual(page, manual, dirPaths[manual.id], mode, isShuttingDown);
+  totalStats.downloaded += manualStats.downloaded;
+  totalStats.skipped += manualStats.skipped;
+  totalStats.failed += manualStats.failed;
   }
 
   console.log("\n--- Download Complete ---");
