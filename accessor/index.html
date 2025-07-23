@@ -121,7 +121,8 @@
     </div>
 
     <script>
-        document.addEventListener("DOMContentLoaded", function() {
+        // FIX: Use the 'load' event to ensure all scripts are loaded before execution
+        window.addEventListener("load", function() {
             const tocContainer = document.getElementById('toc-container');
             const tocStatus = document.getElementById('toc-status');
             const pdfViewer = document.getElementById('pdf-viewer');
