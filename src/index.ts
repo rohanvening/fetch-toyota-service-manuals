@@ -7,7 +7,7 @@ import { chromium } from "playwright-extra";
 import processCLIArgs, { CLIArgs } from "./processCLIArgs";
 import { join, resolve } from "path";
 import { mkdir, readFile, writeFile, stat } from "fs/promises";
-import downloadGenericManual from "./genericManual";
+import downloadGenericManual, { DownloadStats } from "./genericManual"; // Import the new type
 import { Cookie } from "playwright";
 import { jar } from "./api/client";
 import dayjs from "dayjs";
@@ -24,7 +24,6 @@ interface ExtendedCLIArgs extends CLIArgs {
 }
 
 async function run(args: ExtendedCLIArgs) {
-  // Read the cookie string from the environment variable
   const cookieString = process.env.TIS_COOKIE_STRING;
   const { manual, mode = "resume" } = args;
   const genericManuals: Manual[] = [];
@@ -152,12 +151,28 @@ async function run(args: ExtendedCLIArgs) {
   }
 
   console.log("Beginning manual downloads...");
+  // =================================================================
+  // NEW: Initialize stats object to track download progress
+  // =================================================================
+  const totalStats: DownloadStats = { downloaded: 0, skipped: 0, failed: 0 };
+
   for (const manual of genericManuals) {
-    console.log(`Downloading ${manual.raw}... (type = generic)`);
-    await downloadGenericManual(page, manual, dirPaths[manual.id], mode);
+    console.log(`\nDownloading ${manual.raw}...`);
+    const manualStats = await downloadGenericManual(page, manual, dirPaths[manual.id], mode);
+    totalStats.downloaded += manualStats.downloaded;
+    totalStats.skipped += manualStats.skipped;
+    totalStats.failed += manualStats.failed;
   }
 
-  console.log("All manuals downloaded!");
+  // =================================================================
+  // NEW: Print final summary report
+  // =================================================================
+  console.log("\n--- Download Complete ---");
+  console.log(`✅ Downloaded: ${totalStats.downloaded}`);
+  console.log(`⏩ Skipped:    ${totalStats.skipped}`);
+  console.log(`❌ Failed:     ${totalStats.failed}`);
+  console.log("-------------------------");
+
   await browser.close();
   process.exit(0);
 }
