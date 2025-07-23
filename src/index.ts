@@ -12,6 +12,8 @@ import downloadGenericManual, { DownloadStats } from "./genericManual";
 import { jar } from "./api/client";
 import dayjs from "dayjs";
 
+let isShuttingDown = false;
+
 export interface Manual {
   type: "em" | "rm" | "bm";
   id: string;
@@ -105,15 +107,19 @@ async function run(args: ExtendedCLIArgs) {
   // =================================================================
   // NEW: Graceful shutdown handler for Ctrl+C
   // =================================================================
-  const cleanup = async () => {
-    console.log("\nCaught interrupt signal. Shutting down gracefully...");
-    if (browser) {
-      await browser.close();
-      console.log("Browser closed.");
-    }
-    process.exit(0);
-  };
+ const cleanup = async () => {
+  if (isShuttingDown) return; // Prevent multiple calls
+  isShuttingDown = true;
+  console.log("\nCaught interrupt signal. Shutting down gracefully...");
 
+  // If you want, add logic to wait for downloads to abort here
+
+  if (browser) {
+    await browser.close();
+    console.log("Browser closed.");
+  }
+  process.exit(0);
+};
   process.on('SIGINT', cleanup);
   process.on('SIGTERM', cleanup);
   // =================================================================
