@@ -2,78 +2,183 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Manual Locator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual Viewer</title>
     <script src="toc.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            background-color: #f4f4f9;
+            color: #333;
+        }
+
+        #nav-pane {
+            width: 350px;
+            min-width: 250px;
+            height: 100%;
+            overflow-y: auto;
+            background-color: #fff;
+            border-right: 1px solid #ddd;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        #content-pane {
+            flex-grow: 1;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #pdf-viewer {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        h1 {
+            font-size: 1.5em;
+            margin-top: 0;
+            color: #0056b3;
+        }
+        
+        #toc-container ul {
+            list-style-type: none;
+            padding-left: 20px;
+        }
+
+        #toc-container li {
+            margin: 5px 0;
+        }
+
+        #toc-container .folder {
+            cursor: pointer;
+            font-weight: bold;
+            position: relative;
+        }
+
+        #toc-container .folder::before {
+            content: '▶';
+            position: absolute;
+            left: -15px;
+            font-size: 0.8em;
+            transition: transform 0.2s;
+        }
+        
+        #toc-container .folder.open::before {
+            transform: rotate(90deg);
+        }
+
+        #toc-container .nested {
+            display: none;
+        }
+
+        #toc-container .nested.active {
+            display: block;
+        }
+
+        #toc-container a {
+            text-decoration: none;
+            color: #0056b3;
+            display: block;
+            padding: 4px 0;
+            border-radius: 4px;
+        }
+
+        #toc-container a:hover {
+            background-color: #e9ecef;
+        }
+        
+        #welcome-message {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            text-align: center;
+            color: #888;
+        }
+    </style>
 </head>
 <body>
-<h1>Manual Locator</h1>
-<p>Paste a URL from TechInfo and we'll open it in your Manual. Copy links from the manual PDFs and paste them here.</p>
-<p>This only works if <code>toc.js</code> is in this folder and we're at the root of the manual.</p>
-<p>Table of contents status: <span id="tocstatus">loading...</span></p>
-<form id="search-form">
-    <input type="text" id="urlbox" placeholder="https://techinfo.toyota.com/t3Portal/document/rm/...">
-    <button type="submit" id="search" disabled>Go</button>
-</form>
 
-<p id="locatorstatus">Enter a TechInfo URL and we'll open it in your manual.</p>
+    <div id="nav-pane">
+        <h1>Manual Contents</h1>
+        <div id="toc-container">
+            <p id="toc-status">Loading table of contents...</p>
+        </div>
+    </div>
+
+    <div id="content-pane">
+        <iframe id="pdf-viewer" name="pdf-viewer-frame">
+            <!-- The welcome message will be shown inside the iframe initially -->
+            <p>Your browser does not support iframes.</p>
+        </iframe>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const tocContainer = document.getElementById('toc-container');
+            const tocStatus = document.getElementById('toc-status');
+            const pdfViewer = document.getElementById('pdf-viewer');
+
+            // Set initial welcome message
+            pdfViewer.srcdoc = `<div style="font-family: sans-serif; color: #888; text-align: center; height: 100%; display: flex; justify-content: center; align-items: center;"><h1>Welcome!</h1><p>Select a section from the menu to view a PDF.</p></div>`;
+
+            if (typeof document.toc !== 'undefined') {
+                tocStatus.style.display = 'none';
+                const tocTree = buildTocHtml(document.toc);
+                tocContainer.appendChild(tocTree);
+            } else {
+                tocStatus.textContent = "Error: Could not load toc.js or document.toc is not defined.";
+                tocStatus.style.color = 'red';
+            }
+
+            // Function to recursively build the HTML for the ToC
+            function buildTocHtml(tocNode, path = []) {
+                const ul = document.createElement('ul');
+                if (path.length > 0) {
+                    ul.classList.add('nested');
+                }
+
+                for (const key in tocNode) {
+                    const li = document.createElement('li');
+                    const currentPath = [...path, key];
+
+                    if (typeof tocNode[key] === 'string') {
+                        // This is a file link
+                        const a = document.createElement('a');
+                        const sanitizedFileName = currentPath.map(p => p.replace(/\//g, "-")).join('/');
+                        a.href = `${sanitizedFileName}.pdf`;
+                        a.textContent = key;
+                        a.target = 'pdf-viewer-frame'; // Target the iframe
+                        li.appendChild(a);
+                    } else {
+                        // This is a folder/directory
+                        li.textContent = key;
+                        li.classList.add('folder');
+                        li.addEventListener('click', function(e) {
+                            e.stopPropagation(); // Prevent parent folders from toggling
+                            this.classList.toggle('open');
+                            const nestedUl = this.querySelector('.nested');
+                            if (nestedUl) {
+                                nestedUl.classList.toggle('active');
+                            }
+                        });
+                        
+                        const nestedUl = buildTocHtml(tocNode[key], currentPath);
+                        li.appendChild(nestedUl);
+                    }
+                    ul.appendChild(li);
+                }
+                return ul;
+            }
+        });
+    </script>
+
 </body>
-<script src="toc.js"></script>
-<script>
-  let toc = document.toc;
-  if (toc) {
-    // unlock
-    document.getElementById('tocstatus').textContent = "toc.js loaded";
-    document.getElementById('search').disabled = false;
-  } else {
-    document.getElementById('tocstatus').textContent = "couldn't find or there was an error loading toc.js in this directory";
-  }
-
-  function handleClick(e) {
-    e.preventDefault();
-    // read url
-    const url = document.querySelector('input').value;
-    // parse url
-    try {
-      const urlobj = new URL(url);
-      if (urlobj.hostname !== 'techinfo.toyota.com') {
-        document.getElementById('locatorstatus').textContent = 'This is not a TechInfo URL.';
-        return;
-      }
-      const pathname = urlobj.pathname;
-      // search toc
-      const path = searchToC(toc, pathname, []);
-      if (!path) {
-        document.getElementById('locatorstatus').textContent = 'Could not find this page in the manual.';
-        return;
-      }
-      const location = path.map(p => encodeURIComponent(p.replaceAll("/", "-"))).join('/');
-      window.open(`${location}.pdf`);
-    } catch (e) {
-      document.getElementById('locatorstatus').textContent = 'Could not parse the URL.';
-      console.error(e);
-      return;
-    }
-
-    document.getElementById('locatorstatus').textContent = 'OK';
-    document.getElementById("urlbox").value = "";
-    document.getElementById("urlbox").focus();
-  }
-
-  function searchToC(toc, path, objpath = []) {
-    for (const chapter in toc) {
-      if (typeof toc[chapter] === 'string') {
-        if (toc[chapter] === path) {
-          return objpath.concat(chapter);
-        }
-      } else {
-        const result = searchToC(toc[chapter], path, objpath.concat(chapter));
-        if (result) {
-          return result;
-        }
-      }
-    }
-  }
-
-  document.getElementById("search-form").addEventListener("submit", handleClick);
-</script>
 </html>
