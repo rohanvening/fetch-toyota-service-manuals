@@ -44,6 +44,16 @@ export default async function downloadEWD(manualData: Manual, path: string) {
       );
     }
 
+    // --- Diagnostic: Print first 400 chars if we get HTML instead of XML
+    if (typeof titleReq.data === "string" && /<html/i.test(titleReq.data)) {
+      console.error("Received HTML instead of XML for EWD title. This usually means:");
+      console.error(" - Your session/cookie is invalid (most common)");
+      console.error(" - OR the EWD manual ID does not exist.");
+      console.error("First 400 characters of response:");
+      console.error(titleReq.data.slice(0, 400));
+      process.exit(1);
+    }
+
     const files = await parseTitle(titleReq.data);
 
     // write to disk
