@@ -16,7 +16,8 @@ function recursiveParse(element: Element, year?: number): ParsedToC | string | n
     const titleElement = element.elements?.find(e => e.name === 'title');
     if (titleElement && titleElement.elements) {
       // Find the text node within the <title> element
-      const titleTextElement = titleElement.elements.find(e => e.type === 'text');
+      // FIX: Cast to any[] to work around faulty type definitions from the library
+      const titleTextElement = (titleElement.elements as any[]).find(e => e.type === 'text');
       if (titleTextElement && titleTextElement.text) {
         const title = (titleTextElement.text as string).trim();
         // If a year is specified, only include pages that contain that year in their title
@@ -36,7 +37,8 @@ function recursiveParse(element: Element, year?: number): ParsedToC | string | n
 
       const titleElement = child.elements?.find(e => e.name === 'title');
       if (titleElement && titleElement.elements) {
-        const titleTextElement = titleElement.elements.find(e => e.type === 'text');
+        // FIX: Cast to any[] to work around faulty type definitions from the library
+        const titleTextElement = (titleElement.elements as any[]).find(e => e.type === 'text');
         if (titleTextElement && titleTextElement.text) {
           const title = (titleTextElement.text as string).trim();
           const parsedChild = recursiveParse(child, year);
