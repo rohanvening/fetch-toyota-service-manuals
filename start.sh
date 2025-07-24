@@ -21,12 +21,12 @@ This script downloads Toyota Technical Information System (TIS) manuals.
 3.  You must find your vehicle's Manual ID from the TIS portal after logging in.
     - Navigate to your vehicle's Repair Manual (RM) or Electrical Wiring Diagram (EWD).
     - When the viewer window pops up, look at the URL.
-    - The Manual ID will be a code like 'RM12345' or 'EM12345'.
+    - The Manual ID will be a code like 'RM12345', 'EM12345' or 'EWD12345'.
 
 ================================================================================
 
 Required Arguments:
-  -m, --manual <MANUAL_ID>    The ID of the manual to download (e.g., RM661U).
+  -m, --manual <MANUAL_ID>    The ID of the manual to download (e.g., RM661U, EWD353U).
                               Can be specified multiple times.
 
   --cookie-string '...'       A valid cookie string from an authenticated TIS session in your browser.
@@ -43,7 +43,7 @@ Download Modes:
   - overwrite: Re-downloads all files, overwriting any that exist.
 
 Example:
-  ./start.sh -m RM661U --mode resume --cookie-string 'TISESSIONID=...;'
+  ./start.sh -m RM661U -m EWD353U --mode resume --cookie-string 'TISESSIONID=...;'
 
 Cookie Heist Instructions:
   To get your cookie string:
@@ -60,7 +60,6 @@ EOF
 # Argument Parsing
 # =================================================================
 COOKIE_STRING=""
-# Use a temporary array to hold arguments for the node script
 NODE_ARGS=()
 
 # Check for help flag first
@@ -79,7 +78,11 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --mode)
-      NODE_ARGS+=(--mode "$2") # Pass mode directly to node
+      NODE_ARGS+=(--mode "$2")
+      shift 2
+      ;;
+    -m|--manual)
+      NODE_ARGS+=(-m "$2")
       shift 2
       ;;
     # FIX: Recognize and ignore old, unsupported arguments
@@ -115,7 +118,6 @@ if [ -z "$COOKIE_STRING" ]; then
 fi
 
 # If mode is missing, prompt for it
-# We check if --mode was passed in NODE_ARGS
 if ! [[ " ${NODE_ARGS[@]} " =~ " --mode " ]]; then
     echo ""
     echo "--- Please select a download mode ---"
@@ -158,7 +160,6 @@ if ! grep -q '"playwright-extra":' package.json; then
     fi
 fi
 echo "✅ Stealth plugins are configured."
-
 
 echo "--- All Checks Passed. Starting Application ---"
 echo ""
