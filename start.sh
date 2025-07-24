@@ -45,6 +45,15 @@ Download Modes:
 Example:
   ./start.sh -m RM661U -m EWD353U --mode resume --cookie-string 'TISESSIONID=...;'
 
+================================================================================
+IMPORTANT: Only ONE session can be active per TIS account at a time!
+================================================================================
+- DO NOT log in on the TIS website while using this script.
+- DO NOT open TIS in another browser, tab, or device while using this script.
+- If you do, your session/cookie will be invalidated and downloads will fail.
+- If you encounter repeated login errors, wait 15–30 minutes before trying again with a fresh cookie.
+================================================================================
+
 Cookie Heist Instructions:
   To get your cookie string:
   1. Open a new Incognito Window in your browser.
@@ -91,7 +100,6 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     *)
-      # Pass any other arguments directly to the Node.js script
       NODE_ARGS+=("$1")
       shift
       ;;
@@ -150,7 +158,6 @@ if [ ! -d "node_modules" ]; then
 fi
 echo "✅ Base node modules are installed."
 
-# FIX: Check for and install playwright-extra if it's missing
 if ! grep -q '"playwright-extra":' package.json; then
     echo "⚠️ Stealth plugin 'playwright-extra' not found in package.json. Running 'yarn add'..."
     yarn add playwright-extra
@@ -164,8 +171,40 @@ echo "✅ Stealth plugins are configured."
 echo "--- All Checks Passed. Starting Application ---"
 echo ""
 
-# Export the cookie string as an environment variable
 export TIS_COOKIE_STRING="$COOKIE_STRING"
 
-# Execute the main Node.js script, passing the cleaned arguments
-xvfb-run --auto-servernum npx ts-node src/index.ts "${NODE_ARGS[@]}"
+# =================================================================
+# Run ts-node and detect login/session errors in output (HTML login page)
+# =================================================================
+
+ERROR_LOG=temp_tis_fetch_error.log
+rm -f "$ERROR_LOG"
+
+xvfb-run --auto-servernum npx ts-node src/index.ts "${NODE_ARGS[@]}" 2>&1 | tee "$ERROR_LOG"
+
+# Check output for HTML login page or TIS login error
+if grep -q "Received HTML instead of XML for EWD title" "$ERROR_LOG"; then
+    echo ""
+    echo "================================================================================"
+    echo "ERROR: Toyota TIS returned a login or pre-login page instead of the manual data."
+    echo "--------------------------------------------------------------------------------"
+    echo "This means your session/cookie is INVALID or EXPIRED."
+    echo ""
+    echo "Likely causes:"
+    echo " - You used this script AND visited the TIS website at the same time."
+    echo " - You logged in to TIS in another browser/tab/device (only one session allowed)."
+    echo " - Your cookie is old or has already expired."
+    echo ""
+    echo "What to do:"
+    echo " 1. WAIT at least 15–30 minutes in case TIS needs to clear previous sessions."
+    echo " 2. Open a NEW incognito window, log in to https://techinfo.toyota.com/t3Portal/."
+    echo " 3. Get a fresh cookie string using Developer Tools after log in."
+    echo " 4. Make sure you are NOT logged in anywhere else (close all tabs/windows/devices)."
+    echo " 5. Run this script again with the new cookie."
+    echo ""
+    echo "IMPORTANT: Do NOT use the TIS website while the script is running!"
+    echo "================================================================================"
+    exit 2
+fi
+
+rm -f "$ERROR_LOG"
