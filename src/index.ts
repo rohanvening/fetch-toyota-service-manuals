@@ -25,6 +25,7 @@ interface ExtendedCLIArgs extends CLIArgs {
 }
 
 async function run(args: ExtendedCLIArgs) {
+  // Read the cookie string from the environment variable
   const cookieString = process.env.TIS_COOKIE_STRING;
   const { manual, mode = "resume" } = args;
   const genericManuals: Manual[] = [];
@@ -135,14 +136,6 @@ async function run(args: ExtendedCLIArgs) {
             jar.setCookieSync(cookie, 'https://techinfo.toyota.com');
         }
     });
-
-    // =================================================================
-    // DEBUGGING: Log the state of the cookie jar after population
-    // =================================================================
-    console.log("--- DEBUG: Axios Cookie Jar State (After Population) ---");
-    console.log(JSON.stringify(jar.toJSON(), null, 2));
-    console.log("------------------------------------------------------");
-
 
   } else {
     console.log("No cookie string provided via environment variable. Aborting.");
