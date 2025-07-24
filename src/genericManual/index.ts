@@ -20,30 +20,38 @@ export default async function downloadGenericManual(
   path: string,
   mode: "fresh" | "resume" | "overwrite"
 ): Promise<DownloadStats> {
-  let tocReq: AxiosResponse;
+  let tocContent: string;
   try {
-    console.log("  - Downloading table of contents...");
-    // This uses the shared axios client, which has been populated with the correct cookies
-    tocReq = await client({
-      method: "GET",
-      url: `${manualData.type}/${manualData.id}/toc.xml`,
-      responseType: "text",
-    });
+    console.log("  - Downloading table of contents using authenticated browser...");
+    // =================================================================
+    // FIX: Use the authenticated Playwright page to fetch the XML
+    // =================================================================
+    const tocUrl = `https://techinfo.toyota.com/t3Portal/external/en/${manualData.type}/${manualData.id}/toc.xml`;
+    const response = await page.goto(tocUrl);
+
+    if (!response || !response.ok()) {
+        throw new Error(`Failed to fetch toc.xml, status: ${response?.status()}`);
+    }
+    
+    // Get the raw text content of the page, which is our XML
+    tocContent = await response.text();
+
   } catch (e: any) {
     if (shutdownManager.isShuttingDown) return { downloaded: 0, skipped: 0, failed: 0 };
-    if (e.response && e.response.status === 404) {
-      throw new Error(`Manual ${manualData.id} doesn't exist.`);
-    }
-    const responseData = e.response?.data || "No response data available.";
-    console.error("CRITICAL: Failed to download the Table of Contents. The server likely returned an HTML error page instead of XML.");
-    console.error("--- Start of Server Response ---");
-    console.log(responseData);
-    console.error("--- End of Server Response ---");
     throw new Error(`Unknown error getting table of contents: ${e.message}`);
   }
 
-  const files = parseToC(tocReq.data, manualData.year);
-  // Create the toc.js file needed by the interactive viewer
+  let files: ParsedToC;
+  try {
+    files = parseToC(tocContent, manualData.year);
+  } catch (e) {
+      console.error("CRITICAL: Failed to parse the Table of Contents. The server likely returned an HTML error page instead of XML.");
+      console.error("--- Start of Server Response ---");
+      console.log(tocContent);
+      console.error("--- End of Server Response ---");
+      throw e;
+  }
+
   await writeFile(join(path, "toc.js"), `document.toc = ${JSON.stringify(files, null, 2)};`);
 
   console.log("  - Downloading all PDF files...");
@@ -93,7 +101,6 @@ async function recursivelyDownloadManual(
           throw new Error(`Page did not redirect to a PDF. Final URL: ${finalUrl}`);
         }
         
-        // This uses the shared axios client, which has the correct cookies
         const pdfStreamResponse = await client.get(finalUrl, {
             responseType: 'stream',
         });
