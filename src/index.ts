@@ -15,11 +15,14 @@ import dayjs from "dayjs";
 import tough from "tough-cookie";
 
 export interface Manual {
-  // ...
+  type: "em" | "rm" | "bm";
+  id: string;
+  year?: number;
+  raw: string;
 }
 
 interface ExtendedCLIArgs extends CLIArgs {
-  // ...
+  mode?: "fresh" | "resume" | "overwrite";
 }
 
 // Helper to parse cookie string into an array of objects
@@ -72,17 +75,15 @@ async function run(args: ExtendedCLIArgs) {
   console.log("DEBUG: TIS_COOKIE_STRING =", cookieString);
 
   // --- Inject cookies into both HTTP and Playwright ---
+  let browser: Browser | null = null;
+  let context: any = null;
   if (cookieString && cookieString.trim()) {
     // For HTTP (axios/tough-cookie)
     await injectCookiesToToughCookie(cookieString, jar, "techinfo.toyota.com");
 
     // For Playwright
-    const browser = await chromium.launch({ headless: true });
-    const context = await injectCookiesToPlaywright(browser, cookieString);
-
-    // Use `context` for all Playwright page interactions
-    // ... (rest of your logic, pass this context/page to wherever needed)
-    // Don't forget to close context/browser when done
+    browser = await chromium.launch({ headless: true });
+    context = await injectCookiesToPlaywright(browser, cookieString);
   }
 
   console.log("Parsing manual IDs...");
@@ -105,13 +106,103 @@ async function run(args: ExtendedCLIArgs) {
     switch (prefix2) {
       case "EM":
       case "RM":
-        // ... rest of your logic
-        break;
-      // ... etc
+      case "BM":
+        genericManuals.push({
+          type: prefix2.toLowerCase() as "em" | "rm" | "bm",
+          id,
+          year,
+          raw: m,
+        });
+        return;
+      default:
+        console.error(
+          `Invalid manual ${m}: manual IDs must start with EWD, EM, RM, or BM.`
+        );
+        process.exit(1);
     }
+    // --- End: Enhanced prefix check for EWD ---
   });
 
-  // ... rest of your run logic
+  let dirPaths: { [manualId: string]: string } = Object.fromEntries(
+    genericManuals.map((m) => [m.id, resolve(join(".", "manuals", m.raw))])
+  );
+
+  if (mode === "fresh") {
+    console.log("Mode: Fresh Download. Creating versioned folders...");
+    const datePrefix = new Date().toISOString().split("T")[0];
+
+    const versionedDirPaths: { [manualId: string]: string } = {};
+    for (const m of genericManuals) {
+      let versionedPath = resolve(
+        join(".", "manuals", `${datePrefix}_${m.raw}`)
+      );
+      let counter = 1;
+      while (true) {
+        try {
+          await stat(versionedPath);
+          versionedPath = resolve(
+            join(
+              ".",
+              "manuals",
+              `${datePrefix}_${m.raw}_(${++counter})`
+            )
+          );
+        } catch (e) {
+          break;
+        }
+      }
+      versionedDirPaths[m.id] = versionedPath;
+    }
+    dirPaths = versionedDirPaths;
+  } else {
+    console.log(`Mode: ${mode.charAt(0).toUpperCase() + mode.slice(1)}.`);
+  }
+
+  await Promise.all(
+    Object.values(dirPaths).map((m) => mkdir(m, { recursive: true }))
+  );
+
+  console.log("Copying accessor into manuals...");
+  try {
+    const accessorHTML = await readFile(
+      join(__dirname, "..", "accessor/index.html"),
+      "utf-8"
+    );
+    await Promise.all(
+      Object.values(dirPaths).map((m) =>
+        writeFile(join(m, "index.html"), accessorHTML)
+      )
+    );
+  } catch (e) {
+    console.error("Failed to copy accessor/index.html:", e);
+  }
+
+  // --- Begin: Download logic, no features lost ---
+  try {
+    for (const manual of genericManuals) {
+      const manualDir = dirPaths[manual.id];
+      if (manual.type === "em") {
+        // Both EM and EWD types routed here!
+        console.log(`Downloading EWD manual: ${manual.raw}`);
+        await downloadEWD(manual, manualDir);
+      } else {
+        // RM and BM go here
+        console.log(
+          `Downloading ${manual.type.toUpperCase()} manual: ${manual.raw}`
+        );
+        if (!context) {
+          if (!browser) browser = await chromium.launch({ headless: true });
+          context = await browser.newContext();
+        }
+        const page = await context.newPage();
+        await downloadGenericManual(page, manual, manualDir, mode);
+        await page.close();
+      }
+    }
+  } finally {
+    if (browser) await browser.close();
+  }
+  // --- End: Download logic, no features lost ---
 }
 
 (async () => {
