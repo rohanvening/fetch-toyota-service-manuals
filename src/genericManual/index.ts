@@ -1,8 +1,11 @@
+import { AxiosResponse } from "axios";
+import { client } from "../api/client";
 import { mkdir, writeFile, stat } from "fs/promises";
 import { join } from "path";
 import parseToC, { ParsedToC } from "./parseToC";
 import { Page } from "playwright";
 import { Manual } from "..";
+import saveStream from "../api/saveStream";
 import { shutdownManager } from "../state";
 
 export interface DownloadStats {
@@ -17,40 +20,31 @@ export default async function downloadGenericManual(
   path: string,
   mode: "fresh" | "resume" | "overwrite"
 ): Promise<DownloadStats> {
-  let tocContent: string;
+  let tocReq: AxiosResponse;
   try {
-    console.log("  - Downloading table of contents using authenticated browser...");
+    console.log("  - Downloading table of contents...");
     // =================================================================
-    // FIX: Use the authenticated Playwright page to fetch the XML
+    // REVERTED to the proven logic from your working backup
     // =================================================================
-    const tocUrl = `https://techinfo.toyota.com/t3Portal/external/en/${manualData.type}/${manualData.id}/toc.xml`;
-    
-    // page.evaluate runs JavaScript inside the browser page
-    tocContent = await page.evaluate(async (url) => {
-      // This code runs in the browser, not in Node.js
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch toc.xml, status: ${response.status}`);
-      }
-      return response.text();
-    }, tocUrl); // Pass tocUrl as an argument to the function
-
+    tocReq = await client({
+      method: "GET",
+      url: `${manualData.type}/${manualData.id}/toc.xml`,
+      responseType: "text",
+    });
   } catch (e: any) {
     if (shutdownManager.isShuttingDown) return { downloaded: 0, skipped: 0, failed: 0 };
+    if (e.response && e.response.status === 404) {
+      throw new Error(`Manual ${manualData.id} doesn't exist.`);
+    }
+    const responseData = e.response?.data || "No response data available.";
+    console.error("CRITICAL: Failed to download the Table of Contents. The server likely returned an HTML error page instead of XML.");
+    console.error("--- Start of Server Response ---");
+    console.log(responseData);
+    console.error("--- End of Server Response ---");
     throw new Error(`Unknown error getting table of contents: ${e.message}`);
   }
 
-  let files: ParsedToC;
-  try {
-    files = parseToC(tocContent, manualData.year);
-  } catch (e) {
-      console.error("CRITICAL: Failed to parse the Table of Contents. The server likely returned an HTML error page instead of XML.");
-      console.error("--- Start of Server Response ---");
-      console.log(tocContent);
-      console.error("--- End of Server Response ---");
-      throw e;
-  }
-
+  const files = parseToC(tocReq.data, manualData.year);
   await writeFile(join(path, "toc.js"), `document.toc = ${JSON.stringify(files, null, 2)};`);
 
   console.log("  - Downloading all PDF files...");
@@ -101,21 +95,13 @@ async function recursivelyDownloadManual(
         }
         
         // =================================================================
-        // FIX: Use the browser's fetch API to get the raw PDF data
+        // REVERTED to the proven logic from your working backup
         // =================================================================
-        const pdfArrayBuffer = await page.evaluate(async (url) => {
-            const response = await fetch(url);
-            const buffer = await response.arrayBuffer();
-            // Convert the ArrayBuffer to a plain array of numbers to send it back to Node.js
-            return Array.from(new Uint8Array(buffer));
-        }, finalUrl);
+        const pdfStreamResponse = await client.get(finalUrl, {
+            responseType: 'stream',
+        });
 
-        if (!pdfArrayBuffer || pdfArrayBuffer.length === 0) {
-            throw new Error("Downloaded PDF buffer was empty.");
-        }
-
-        const pdfBuffer = Buffer.from(pdfArrayBuffer);
-        await writeFile(filePath, pdfBuffer);
+        await saveStream(pdfStreamResponse.data, filePath);
 
         const fileStats = await stat(filePath);
         const fileSizeInKB = Math.round(fileStats.size / 1024);
