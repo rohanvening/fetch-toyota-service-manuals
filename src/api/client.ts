@@ -4,7 +4,7 @@ import { CookieJar } from "tough-cookie";
 
 export const jar = new CookieJar();
 
-// Reverted to the original version without the incompatible httpsAgent
+// This is the proven client configuration from your working backup
 export const client = wrapper(
   axios.create({
     jar,
