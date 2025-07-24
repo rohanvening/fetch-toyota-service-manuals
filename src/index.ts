@@ -136,6 +136,14 @@ async function run(args: ExtendedCLIArgs) {
         }
     });
 
+    // =================================================================
+    // DEBUGGING: Log the state of the cookie jar after population
+    // =================================================================
+    console.log("--- DEBUG: Axios Cookie Jar State (After Population) ---");
+    console.log(JSON.stringify(jar.toJSON(), null, 2));
+    console.log("------------------------------------------------------");
+
+
   } else {
     console.log("No cookie string provided via environment variable. Aborting.");
     process.exit(1);
