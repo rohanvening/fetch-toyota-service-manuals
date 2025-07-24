@@ -1,11 +1,8 @@
-import { AxiosResponse } from "axios";
-import { client } from "../api/client";
 import { mkdir, writeFile, stat } from "fs/promises";
 import { join } from "path";
 import parseToC, { ParsedToC } from "./parseToC";
 import { Page } from "playwright";
 import { Manual } from "..";
-import saveStream from "../api/saveStream";
 import { shutdownManager } from "../state";
 
 export interface DownloadStats {
@@ -27,14 +24,16 @@ export default async function downloadGenericManual(
     // FIX: Use the authenticated Playwright page to fetch the XML
     // =================================================================
     const tocUrl = `https://techinfo.toyota.com/t3Portal/external/en/${manualData.type}/${manualData.id}/toc.xml`;
-    const response = await page.goto(tocUrl);
-
-    if (!response || !response.ok()) {
-        throw new Error(`Failed to fetch toc.xml, status: ${response?.status()}`);
-    }
     
-    // Get the raw text content of the page, which is our XML
-    tocContent = await response.text();
+    // page.evaluate runs JavaScript inside the browser page
+    tocContent = await page.evaluate(async (url) => {
+      // This code runs in the browser, not in Node.js
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch toc.xml, status: ${response.status}`);
+      }
+      return response.text();
+    }, tocUrl); // Pass tocUrl as an argument to the function
 
   } catch (e: any) {
     if (shutdownManager.isShuttingDown) return { downloaded: 0, skipped: 0, failed: 0 };
@@ -101,11 +100,22 @@ async function recursivelyDownloadManual(
           throw new Error(`Page did not redirect to a PDF. Final URL: ${finalUrl}`);
         }
         
-        const pdfStreamResponse = await client.get(finalUrl, {
-            responseType: 'stream',
-        });
+        // =================================================================
+        // FIX: Use the browser's fetch API to get the raw PDF data
+        // =================================================================
+        const pdfArrayBuffer = await page.evaluate(async (url) => {
+            const response = await fetch(url);
+            const buffer = await response.arrayBuffer();
+            // Convert the ArrayBuffer to a plain array of numbers to send it back to Node.js
+            return Array.from(new Uint8Array(buffer));
+        }, finalUrl);
 
-        await saveStream(pdfStreamResponse.data, filePath);
+        if (!pdfArrayBuffer || pdfArrayBuffer.length === 0) {
+            throw new Error("Downloaded PDF buffer was empty.");
+        }
+
+        const pdfBuffer = Buffer.from(pdfArrayBuffer);
+        await writeFile(filePath, pdfBuffer);
 
         const fileStats = await stat(filePath);
         const fileSizeInKB = Math.round(fileStats.size / 1024);
