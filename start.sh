@@ -148,17 +148,6 @@ if [ ! -d "node_modules" ]; then
 fi
 echo "✅ Base node modules are installed."
 
-# FIX: Check for and install playwright-extra if it's missing
-if ! grep -q '"playwright-extra":' package.json; then
-    echo "⚠️ Stealth plugin 'playwright-extra' not found in package.json. Running 'yarn add'..."
-    yarn add playwright-extra
-    if [ $? -ne 0 ]; then
-        echo "ERROR: Failed to add playwright-extra. Please check for errors."
-        exit 1
-    fi
-fi
-echo "✅ Stealth plugins are configured."
-
 
 echo "--- All Checks Passed. Starting Application ---"
 echo ""
