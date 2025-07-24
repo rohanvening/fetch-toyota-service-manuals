@@ -5,13 +5,8 @@ import { join } from "path";
 import parseToC, { ParsedToC } from "./parseToC";
 import { Page } from "playwright";
 import { Manual } from "..";
-
-/**
- * Sanitizes a string to make it safe for use as a Windows-compatible filename.
- */
-function sanitizeFileName(name: string): string {
-  return name.replace(/[\/\\:*?"<>|]/g, "-").replace(/\s+/g, " ").trim();
-}
+import saveStream from "../api/saveStream";
+import { shutdownManager } from "../state";
 
 export interface DownloadStats {
   downloaded: number;
@@ -28,12 +23,14 @@ export default async function downloadGenericManual(
   let tocReq: AxiosResponse;
   try {
     console.log("  - Downloading table of contents...");
+    // REVERTED to the proven logic from your working backup
     tocReq = await client({
       method: "GET",
       url: `${manualData.type}/${manualData.id}/toc.xml`,
       responseType: "text",
     });
   } catch (e: any) {
+    if (shutdownManager.isShuttingDown) return { downloaded: 0, skipped: 0, failed: 0 };
     if (e.response && e.response.status === 404) {
       throw new Error(`Manual ${manualData.id} doesn't exist.`);
     }
@@ -46,7 +43,7 @@ export default async function downloadGenericManual(
   }
 
   const files = parseToC(tocReq.data, manualData.year);
-  await writeFile(join(path, "toc.json"), JSON.stringify(files, null, 2));
+  await writeFile(join(path, "toc.js"), `document.toc = ${JSON.stringify(files, null, 2)};`);
 
   console.log("  - Downloading all PDF files...");
   const stats = await recursivelyDownloadManual(page, path, files, mode);
@@ -63,26 +60,25 @@ async function recursivelyDownloadManual(
 ): Promise<DownloadStats> {
   const entries = Object.entries(toc);
   for (const [index, [name, value]] of entries.entries()) {
+    if (shutdownManager.isShuttingDown) break;
+
     if (typeof value === "string") {
-      const sanitizedName = sanitizeFileName(name);
+      const sanitizedName = name.replace(/\//g, "-");
       const filePath = `${join(path, sanitizedName)}.pdf`;
+      
       const progress = `[${(index + 1).toString().padStart(3, ' ')}/${entries.length}]`;
-
+      
       if (mode === 'resume') {
-        try {
-          const fileStats = await stat(filePath);
-          const fileSizeInKB = Math.round(fileStats.size / 1024);
-
-          if (fileSizeInKB > 15) {
-            console.log(`\x1b[33m${progress} ⏩ Skipping existing file: ${sanitizedName}.pdf (${fileSizeInKB} KB)\x1b[0m`);
-            stats.skipped++;
-            continue;
-          } else {
-            console.log(`\x1b[36m${progress} ⚠️  Found small file (${fileSizeInKB} KB). Re-downloading ${sanitizedName}.pdf...\x1b[0m`);
+          try {
+              const fileStats = await stat(filePath);
+              if (fileStats.size > 15 * 1024) {
+                console.log(`\x1b[33m${progress} ⏩ Skipping existing file: ${sanitizedName}.pdf\x1b[0m`);
+                stats.skipped++;
+                continue;
+              }
+          } catch (e) {
+              // File does not exist, so proceed with download.
           }
-        } catch {
-          // File does not exist — will proceed to download
-        }
       }
 
       console.log(`${progress} Processing: ${sanitizedName}...`);
@@ -95,52 +91,44 @@ async function recursivelyDownloadManual(
         if (!finalUrl.includes('.pdf')) {
           throw new Error(`Page did not redirect to a PDF. Final URL: ${finalUrl}`);
         }
+        
+        // REVERTED to the proven logic from your working backup
+        const pdfStreamResponse = await client.get(finalUrl, {
+            responseType: 'stream',
+        });
 
-        const pdfArrayBuffer = await page.evaluate(async (url) => {
-          const response = await fetch(url);
-          const buffer = await response.arrayBuffer();
-          return Array.from(new Uint8Array(buffer));
-        }, finalUrl);
-
-        if (!pdfArrayBuffer || pdfArrayBuffer.length === 0) {
-          throw new Error("Downloaded PDF buffer was empty.");
-        }
-
-        const pdfBuffer = Buffer.from(pdfArrayBuffer);
-        await writeFile(filePath, pdfBuffer);
+        await saveStream(pdfStreamResponse.data, filePath);
 
         const fileStats = await stat(filePath);
         const fileSizeInKB = Math.round(fileStats.size / 1024);
-
+        
         if (fileStats.size < 1) {
-          stats.failed++;
-          console.error(`\x1b[31m${progress} ❌ Error: Downloaded file is empty (0 KB).\x1b[0m`);
-          continue;
+            stats.failed++;
+            console.error(`\x1b[31m${progress} ❌ Error processing page ${name}: Downloaded file is empty (0 KB).\x1b[0m`);
+            continue;
         }
 
-        console.log(`\x1b[32m${progress} ✅ Saved ${sanitizedName}.pdf (${fileSizeInKB} KB)\x1b[0m`);
+        console.log(`\x1b[32m${progress} ✅ Successfully saved ${sanitizedName}.pdf (${fileSizeInKB} KB)\x1b[0m`);
+
         stats.downloaded++;
 
       } catch (e) {
+        if (shutdownManager.isShuttingDown) break;
         stats.failed++;
-        console.error(`\x1b[31m${progress} ❌ Error processing ${name}: ${(e as Error).message}\x1b[0m`);
+        console.error(`\x1b[31m${progress} ❌ Error processing page ${name}: ${(e as Error).message}\x1b[0m`);
         continue;
       }
-
     } else {
-      const sanitizedFolder = sanitizeFileName(name);
-      const newPath = join(path, sanitizedFolder);
-
-      try {
-        await mkdir(newPath, { recursive: true });
-      } catch (e: any) {
-        if (e.code !== "EEXIST") {
-          console.log(`Could not create directory ${newPath}. Skipping section.`);
-          continue;
+        const newPath = join(path, name.replace(/\//g, "-"));
+        try {
+          await mkdir(newPath, { recursive: true });
+        } catch (e) {
+          if ((e as any).code !== "EEXIST") {
+            console.log(`Could not create directory ${newPath}. Skipping section.`);
+            continue;
+          }
         }
-      }
-
-      await recursivelyDownloadManual(page, newPath, value, mode, stats);
+        await recursivelyDownloadManual(page, newPath, value, mode, stats);
     }
   }
   return stats;
