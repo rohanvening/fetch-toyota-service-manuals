@@ -1,180 +1,81 @@
 import { xml2js } from "xml-js";
 
+// This is the structure of the parsed Table of Contents
 export interface ParsedToC {
-  [itemOrFolderName: string]: ParsedToC | string;
+  [key: string]: ParsedToC | string;
 }
 
-interface ItemElement {
-  item?: ItemElement | ItemElement[];
-  tocdata?: ToCData;
-  name: {
-    _text: string;
-  };
-  _attributes: {
-    href: string;
-  };
-}
-
-export default function parseToC(
-  tocXml: string,
-  modelYear?: number
-): ParsedToC {
-  const xmlobj = xml2js(tocXml, {
-    compact: true,
-    trim: true,
-    ignoreDoctype: true,
-    ignoreDeclaration: true,
-  });
-
-  // @ts-ignore - compact xml parsing doesn't seem to be typed
-  const bookTitle: string = xmlobj.xmltoc.name._text;
-
-  // @ts-ignore - see above
-  const bookItems: ItemElement[] = xmlobj.xmltoc.item;
-
-  const toc: ParsedToC = {};
-
-  bookItems.forEach((item) => {
-    const itemPath = getItemPath(item, [], modelYear);
-
-    itemPath.forEach((ip) => {
-      // add item to the ToC, final object's value is the path, key is the filename
-      const itemDest = recursivelyAccessObject(ip.path, toc);
-      itemDest[ip.filename] = ip.url;
-    });
-  });
-
-  return toc;
-}
-
-interface ToCData {
-  _attributes: {
-    fromyear: string;
-    toyear: string;
+// This interface matches the structure of the XML from the TIS website
+interface TocElement {
+  name: string;
+  type: "element";
+  elements?: TocElement[];
+  attributes?: {
+    id?: string;
+    href?: string;
   };
 }
 
-function tocdataIsApplicable(tocdata: ToCData, year: number): boolean {
-  if (!tocdata) {
-    return true;
-  }
-
-  const fromYear = parseInt(tocdata._attributes.fromyear);
-  const toYear = parseInt(tocdata._attributes.toyear);
-
-  return year >= fromYear && year <= toYear;
-}
-
-interface ItemPath {
-  path: string[];
-  filename: string;
-  url: string;
-}
-
-function getItemPath(
-  item: ItemElement,
-  currentPath: string[] = [],
-  year?: number
-): ItemPath[] {
-  let subitem = item.item; // needed if year specified
-
-  // VERY CAREFULLY check tocdata and remove pages that don't apply to specified year
-  if (year && item.tocdata) {
-    // if it's not an array
-    if (!Array.isArray(item.tocdata)) {
-      // and it's not applicable
-      if (!tocdataIsApplicable(item.tocdata, year)) {
-        // return
-        console.log(
-          `Skipping page ${item.name._text} (solo) and its children because it's not applicable to year ${year}.`
-        );
-        return [];
-      }
-    } else {
-      // it's an array
-      // item.tocdata[0] is for item, item.tocdata[1] is for item.item, etc.
-      const itemtocdata = item.tocdata[0]; // equivalent of item.tocdata
-      const subitemtocdatas = item.tocdata.slice(1); // equivalent of item.item[0].tocdata
-
-      // first, check if the item is applicable
-      if (!tocdataIsApplicable(itemtocdata, year)) {
-        // if it's not applicable, stop
-        console.log(
-          `Skipping page ${item.name._text} (array) and its children because it's not applicable to year ${year}.`
-        );
-        return [];
-      }
-
-      // if so, check which children are applicable.
-      // but, if subitemtocdatas.length = 1, then we can just check if it's applicable
-      if (subitemtocdatas.length === 1) {
-        if (!tocdataIsApplicable(subitemtocdatas[0], year)) {
-          console.log(
-            `Skipping page ${item.name._text} (sub-single) and its children because it's not applicable to year ${year}.`
-          );
-          return [];
+/**
+ * Recursively parses the XML structure from xml-js into our nested ParsedToC object.
+ * @param element The current XML element to process.
+ * @param year The optional model year to filter by.
+ */
+function recursiveParse(element: TocElement, year?: number): ParsedToC | string | null {
+  // Base case: This is a link to a page
+  if (element.attributes?.href) {
+    const titleElement = element.elements?.find(e => e.name === 'title');
+    if (titleElement) {
+      const titleTextElement = titleElement.elements?.find(e => e.type === 'text');
+      if (titleTextElement) {
+        const title = ((titleTextElement as any).text || '').trim();
+        // If a year is specified, only include pages that contain that year in their title
+        if (year && !title.includes(String(year))) {
+          return null; // Exclude this page
         }
-      } else {
-        // if there are multiple subitems, we need to check which ones are applicable
-        // item.item[0] should coorespond to subitemtocdatas[0], etc.
-        subitem = (item.item as ItemElement[]).filter((itm, idx) =>
-          tocdataIsApplicable(subitemtocdatas[idx], year)
-        );
-
-        const skippedItemCount = subitemtocdatas.length - subitem.length;
-
-        // if there are no applicable subitems, stop
-        if (subitem.length === 0) {
-          console.log(
-            `Skipping page ${item.name._text} (sub-array) and its children because it's not applicable to year ${year}.`
-          );
-          return [];
-        } else if (skippedItemCount > 0) {
-          console.log(
-            `Skipping ${skippedItemCount} pages below ${item.name._text} because they're not applicable to year ${year}.`
-          );
-        }
+        return element.attributes.href;
       }
     }
   }
 
-  // if we are on a leaf node
-  if (!subitem) {
-    return [
-      {
-        path: currentPath,
-        filename: item.name._text,
-        url: item._attributes.href,
-      },
-    ];
-  }
+  // Recursive step: This is a folder/category
+  if (element.elements) {
+    const result: ParsedToC = {};
+    for (const child of element.elements) {
+      if (child.name === 'title') continue; // Skip title elements of folders
 
-  // if not, there may be an array of children...
-  if (Array.isArray(subitem)) {
-    const items: ItemPath[] = [];
-    for (const subItemElement of subitem) {
-      items.push(
-        ...getItemPath(subItemElement, [...currentPath, item.name._text], year)
-      );
+      const titleElement = child.elements?.find(e => e.name === 'title');
+      if (titleElement) {
+        const titleTextElement = titleElement.elements?.find(e => e.type === 'text');
+        if (titleTextElement) {
+          const title = ((titleTextElement as any).text || '').trim();
+          const parsedChild = recursiveParse(child, year);
+          if (parsedChild && Object.keys(parsedChild).length > 0) { // Only add if it's not null or empty
+            result[title] = parsedChild as ParsedToC | string;
+          }
+        }
+      }
     }
-    return items;
+    // If after filtering, the folder is empty, return null so it gets excluded
+    return Object.keys(result).length > 0 ? result : null;
   }
 
-  // or just one child
-  return getItemPath(subitem, [...currentPath, item.name._text], year);
+  return null;
 }
 
-function recursivelyAccessObject(
-  keys: string[],
-  obj: { [any: string]: any }
-): { [any: string]: string } {
-  if (!obj[keys[0]]) {
-    obj[keys[0]] = {};
+
+/**
+ * Parses the raw toc.xml string into a structured JSON object.
+ * @param xml The raw XML string from the TIS website.
+ * @param year An optional model year to filter the results by.
+ */
+export default function parseToC(xml: string, year?: number): ParsedToC {
+  const parsed = xml2js(xml, { compact: false }) as TocElement;
+  const root = parsed.elements?.find(e => e.name === 'toc');
+  if (!root) {
+    throw new Error("Could not find root <toc> element in XML.");
   }
 
-  if (keys.length <= 1) {
-    return obj[keys[0]];
-  }
-
-  return recursivelyAccessObject(keys.slice(1), obj[keys[0]]);
+  const result = recursiveParse(root, year);
+  return result as ParsedToC;
 }
