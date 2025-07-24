@@ -4,6 +4,20 @@ import { CookieJar } from "tough-cookie";
 
 export const jar = new CookieJar();
 
+// Load cookies from env variable at client startup, if available
+const cookieString = process.env.TIS_COOKIE_STRING;
+if (cookieString && cookieString.trim()) {
+  // Split and add each cookie to the jar for the techinfo.toyota.com domain
+  const url = "https://techinfo.toyota.com/";
+  cookieString
+    .split(";")
+    .map((c) => c.trim())
+    .filter(Boolean)
+    .forEach((cookie) => {
+      jar.setCookieSync(cookie, url);
+    });
+}
+
 // Reverted to the original version without the incompatible httpsAgent
 export const client = wrapper(
   axios.create({
