@@ -1,68 +1,42 @@
 import { xml2js } from "xml-js";
 
-/**
- * ParsedTitle provides all document names (keys) and PDF file names (values).
- * The values go at the end of this URL:
- * https://techinfo.toyota.com/t3Portal/external/en/ewdappu/{manual ID}/ewd/contents/overall/pdf/{value}
- */
+// This is the structure of the parsed EWD title file
 export interface ParsedTitle {
-  [documentTitle: string]: string;
+  [key: string]: string;
 }
 
+// This interface matches the structure of the EWD XML
 interface TitleElement {
-  _attributes: {
-    sc: string;
-  };
-  term: {
-    _attributes: {
-      from: string;
-      to: string;
-    };
-  };
-  name: {
-    _attributes: {
-      code: string;
-    };
-    _text: string;
-  };
-  fig: {
-    _attributes: {
-      type: string;
-    };
-    _text: string;
+  name: string;
+  type: "element";
+  elements?: TitleElement[];
+  attributes?: {
+    code?: string;
+    fig?: string;
   };
 }
 
-export default async function parseTitle(
-  titleXml: string
-): Promise<ParsedTitle> {
-  const xmlobj = xml2js(titleXml, {
-    compact: true,
-    trim: true,
-    ignoreDoctype: true,
-    ignoreDeclaration: true,
-  });
+/**
+ * Parses the raw title.xml string from an EWD into a simple key-value object.
+ * @param xml The raw XML string from the TIS website.
+ */
+export default async function parseTitle(xml: string): Promise<ParsedTitle> {
+  const parsed = xml2js(xml, { compact: false }) as TitleElement;
+  const root = parsed.elements?.find(e => e.name === 'title');
+  if (!root || !root.elements) {
+    throw new Error("Could not find root <title> element in XML.");
+  }
 
-  // @ts-ignore - xml2js compact doesn't seem to work well with TS
-  // this gives us the big list of figures
-  const data: TitleElement[] = Object.values(xmlobj.TitleList)[1];
+  const files: ParsedTitle = {};
 
-  const parsedTitle: ParsedTitle = {};
-
-  data.forEach((d) => {
-    const fileType = d.fig._attributes.type;
-    if (fileType !== "pdf" && fileType !== "svgz") {
-      console.log(
-        `Skipping EWD Page ${d.name._text} because its type is not pdf or svgz, it is ${d.fig._attributes.type}`
-      );
-      return;
+  // EWD title files have a flat structure
+  for (const element of root.elements) {
+    if (element.name === 'fig' && element.attributes?.code && element.attributes?.fig) {
+      const name = element.attributes.code;
+      const path = element.attributes.fig;
+      files[name] = path;
     }
+  }
 
-    parsedTitle[
-      // include the fig name just in case of duplicate names, which seem common
-      `${d.name._text.replace(/\//g, "-")} (${d.fig._text})`
-    ] = `${d.fig._text}.${d.fig._attributes.type}`;
-  });
-
-  return parsedTitle;
+  return files;
 }
