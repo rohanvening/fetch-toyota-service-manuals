@@ -4,16 +4,18 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 // =================================================================
 
 import { chromium } from "playwright-extra";
-import { Browser, Cookie } from "playwright"; // Correctly import Browser type
+import { Browser, Cookie } from "playwright";
 import processCLIArgs, { CLIArgs } from "./processCLIArgs";
 import { join, resolve } from "path";
 import { mkdir, readFile, writeFile, stat } from "fs/promises";
 import downloadGenericManual, { DownloadStats } from "./genericManual";
+import downloadEWD from "./ewd"; // Import the EWD downloader
 import { jar } from "./api/client";
 import dayjs from "dayjs";
+import { shutdownManager } from "./state";
 
 export interface Manual {
-  type: "em" | "rm" | "bm";
+  type: "em" | "rm" | "bm" | "ewd"; // Add ewd type
   id: string;
   year?: number;
   raw: string;
@@ -27,6 +29,7 @@ async function run(args: ExtendedCLIArgs) {
   const cookieString = process.env.TIS_COOKIE_STRING;
   const { manual, mode = "resume" } = args;
   const genericManuals: Manual[] = [];
+  const ewdManuals: Manual[] = []; // Separate array for EWDs
   const rawManualIds = new Set(manual.map((m) => m.toUpperCase().trim()));
 
   console.log("Parsing manual IDs...");
@@ -34,12 +37,17 @@ async function run(args: ExtendedCLIArgs) {
     const id = m.includes("@") ? m.split("@")[0] : m;
     const year = m.includes("@") ? parseInt(m.split("@")[1]) : undefined;
 
+    const type = m.slice(0, 3).toUpperCase();
+    if (type === 'EWD') {
+        ewdManuals.push({ type: 'ewd', id, year, raw: m });
+        return;
+    }
+
     switch (m.slice(0, 2).toUpperCase()) {
-      case "EM":
       case "RM":
       case "BM":
         genericManuals.push({
-          type: m.slice(0, 2).toLowerCase() as "em" | "rm" | "bm",
+          type: m.slice(0, 2).toLowerCase() as "rm" | "bm",
           id,
           year,
           raw: m,
@@ -47,14 +55,15 @@ async function run(args: ExtendedCLIArgs) {
         return;
       default:
         console.error(
-          `Invalid manual ${m}: manual IDs must start with EM, RM, or BM.`
+          `Invalid or unsupported manual ID ${m}. Must start with RM, BM, or EWD.`
         );
         process.exit(1);
     }
   });
 
+  const allManuals = [...genericManuals, ...ewdManuals];
   let dirPaths: { [manualId: string]: string } = Object.fromEntries(
-    genericManuals.map((m) => [m.id, resolve(join(".", "manuals", m.raw))])
+    allManuals.map((m) => [m.id, resolve(join(".", "manuals", m.raw))])
   );
 
   if (mode === 'fresh') {
@@ -62,7 +71,7 @@ async function run(args: ExtendedCLIArgs) {
       const datePrefix = new Date().toISOString().split('T')[0];
       
       const versionedDirPaths: { [manualId: string]: string } = {};
-      for (const m of genericManuals) {
+      for (const m of allManuals) {
           let versionedPath = resolve(join(".", "manuals", `${datePrefix}_${m.raw}`));
           let counter = 1;
           while (true) {
@@ -102,10 +111,8 @@ async function run(args: ExtendedCLIArgs) {
     ]
   });
 
-  // =================================================================
-  // NEW: Graceful shutdown handler for Ctrl+C
-  // =================================================================
   const cleanup = async () => {
+    shutdownManager.isShuttingDown = true;
     console.log("\nCaught interrupt signal. Shutting down gracefully...");
     if (browser) {
       await browser.close();
@@ -116,7 +123,6 @@ async function run(args: ExtendedCLIArgs) {
 
   process.on('SIGINT', cleanup);
   process.on('SIGTERM', cleanup);
-  // =================================================================
 
   let transformedCookies: Cookie[] = [];
 
@@ -129,13 +135,6 @@ async function run(args: ExtendedCLIArgs) {
       const name = c.substring(0, firstEqual);
       const value = c.substring(firstEqual + 1);
       return { name, value, domain: ".toyota.com", path: "/", expires: dayjs().add(1, "day").unix(), httpOnly: false, secure: true, sameSite: "None" };
-    });
-
-    console.log("Populating axios cookie jar...");
-    cookieStrings.forEach(cookie => {
-        if (cookie) {
-            jar.setCookieSync(cookie, 'https://techinfo.toyota.com');
-        }
     });
 
   } else {
@@ -172,6 +171,14 @@ async function run(args: ExtendedCLIArgs) {
   for (const manual of genericManuals) {
     console.log(`\nDownloading ${manual.raw}...`);
     const manualStats = await downloadGenericManual(page, manual, dirPaths[manual.id], mode);
+    totalStats.downloaded += manualStats.downloaded;
+    totalStats.skipped += manualStats.skipped;
+    totalStats.failed += manualStats.failed;
+  }
+
+  for (const manual of ewdManuals) {
+    console.log(`\nDownloading ${manual.raw}...`);
+    const manualStats = await downloadEWD(page, manual, dirPaths[manual.id], mode);
     totalStats.downloaded += manualStats.downloaded;
     totalStats.skipped += manualStats.skipped;
     totalStats.failed += manualStats.failed;
