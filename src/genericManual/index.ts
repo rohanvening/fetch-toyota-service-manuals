@@ -23,7 +23,7 @@ export default async function downloadGenericManual(
   let tocReq: AxiosResponse;
   try {
     console.log("  - Downloading table of contents...");
-    // REVERTED to the proven logic from your working backup
+    // This uses the shared axios client, which has been populated with the correct cookies
     tocReq = await client({
       method: "GET",
       url: `${manualData.type}/${manualData.id}/toc.xml`,
@@ -43,6 +43,7 @@ export default async function downloadGenericManual(
   }
 
   const files = parseToC(tocReq.data, manualData.year);
+  // Create the toc.js file needed by the interactive viewer
   await writeFile(join(path, "toc.js"), `document.toc = ${JSON.stringify(files, null, 2)};`);
 
   console.log("  - Downloading all PDF files...");
@@ -92,7 +93,7 @@ async function recursivelyDownloadManual(
           throw new Error(`Page did not redirect to a PDF. Final URL: ${finalUrl}`);
         }
         
-        // REVERTED to the proven logic from your working backup
+        // This uses the shared axios client, which has the correct cookies
         const pdfStreamResponse = await client.get(finalUrl, {
             responseType: 'stream',
         });
